@@ -17,7 +17,6 @@ Known limitations and small improvements not yet scheduled in the [roadmap](road
 | Detecting decision language uses an English phrase list. | Missed reminders | Tune from use; decision mining (M3) |
 | The per-message hook exists for Claude Code only. | Codex relies on `t9 check` | Codex hooks when available; MCP (M3) |
 | The TUI polls every 2 seconds. | Fine at 2,000 items and 50k entries | Server events (M2) |
-| Tested on macOS only. | Linux unverified | CI on Linux (M5) |
 
 ## Improvements
 

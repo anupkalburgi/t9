@@ -1,6 +1,7 @@
 # Status
 
-Version 0.1.0. Usable day to day on macOS; Linux is expected to work but is not tested yet.
+Version 0.1.1. Usable day to day. Prebuilt binaries for macOS and Linux (arm64, x86_64) install with one line;
+CI tests both systems.
 
 ## What exists
 

@@ -6,7 +6,7 @@ Every milestone builds on the same core (`t9-core::Store`) and keeps the storage
 |---|---|---|
 | M0 | Core and CLI | Done |
 | M1 | Agent integration: Claude Code plugin, `AGENTS.md` | Done |
-| M1+ | Decision log, git history, terminal UI | Done |
+| M1+ | Decision log, git history, terminal UI, release binaries and installer | Done |
 | M2 | Local server (`t9 serve`) and a live TUI | Next |
 | M3 | MCP server, importing plans, decision mining, hygiene | Planned |
 | M4 | Semantic search and a web UI | Planned |
@@ -40,6 +40,6 @@ Every milestone builds on the same core (`t9-core::Store`) and keeps the storage
 
 ## M5: packaging and reach
 
-- Release binaries, a Homebrew tap, Linux in CI.
+- A Homebrew tap and signed macOS binaries (release binaries, a curl installer and Linux CI are done).
 - More harnesses (Codex hooks when available, Cursor, Gemini CLI, …).
 - Optional automatic push of the vault to a git remote, to sync between machines.
