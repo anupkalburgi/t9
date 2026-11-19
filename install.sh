@@ -90,7 +90,7 @@ case ":${PATH}:" in *":${INSTALL_DIR}:"*) on_path=1 ;; esac
 if [ "$on_path" = 0 ]; then
   if [ "${T9_NO_MODIFY_PATH:-}" = 1 ]; then
     say "${INSTALL_DIR} is not on your PATH; add this to your shell's startup file:"
-    printf '  export PATH="%s:$PATH"\n' "$path_expr"
+    printf "  export PATH=\"%s:\$PATH\"\n" "$path_expr"
   else
     shell_name="$(basename "${SHELL:-sh}")"
     case "$shell_name" in
