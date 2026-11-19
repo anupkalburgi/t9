@@ -833,7 +833,7 @@ impl Store {
             return self.write_session(&meta, Path::new(&path), Some(at));
         }
         let meta = SessionMeta {
-            id: ulid::Ulid::generate().to_string(),
+            id: new_id(),
             agent,
             harness_id: harness_id.map(String::from),
             project: key.clone(),
@@ -1157,7 +1157,7 @@ impl Store {
         };
         let key = item.as_ref().map(|i| i.project.clone()).unwrap_or(caller_key);
         let meta = EntryMeta {
-            id: ulid::Ulid::generate().to_string(),
+            id: new_id(),
             kind: input.kind,
             at: now(),
             item: item.map(|i| i.meta.id),

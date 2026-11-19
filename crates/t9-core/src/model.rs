@@ -14,6 +14,19 @@ use crate::Error;
 
 pub type Timestamp = DateTime<Utc>;
 
+/// A new entry or session id: a ULID from a monotonic generator, so ids created one after another in this
+/// process always sort in creation order (plain ULIDs are random within the same millisecond).
+pub fn new_id() -> String {
+    static GENERATOR: std::sync::Mutex<Option<ulid::Generator>> = std::sync::Mutex::new(None);
+    let mut guard = GENERATOR.lock().unwrap_or_else(|e| e.into_inner());
+    let generator = guard.get_or_insert_with(ulid::Generator::new);
+    match generator.generate() {
+        Ok(id) => id.to_string(),
+        // Overflow of the random part within one millisecond: astronomically unlikely; fall back.
+        Err(_) => ulid::Ulid::generate().to_string(),
+    }
+}
+
 /// Current time truncated to whole seconds, so files stay readable.
 pub fn now() -> Timestamp {
     Utc::now().trunc_subsecs(0)
@@ -318,6 +331,14 @@ pub fn slugify(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ids_sort_in_creation_order() {
+        let ids: Vec<String> = (0..1000).map(|_| new_id()).collect();
+        let mut sorted = ids.clone();
+        sorted.sort();
+        assert_eq!(ids, sorted);
+    }
 
     #[test]
     fn parses_aliases() {

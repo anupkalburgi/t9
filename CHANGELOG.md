@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix: entries written in the same millisecond could sort out of order (seen as the wrong LATEST change).
+  Ids now come from a monotonic ULID generator.
 - The installer adds `~/.local/bin` to your `PATH` (zsh, bash, fish, or `~/.profile`) when it isn't there
   already; `T9_NO_MODIFY_PATH=1` skips this.
 
