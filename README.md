@@ -17,9 +17,13 @@ from facts instead of a reconstruction.
 ## Install
 
 ```sh
-git clone https://github.com/anupkalburgi/t9 && cd t9
-cargo install --path crates/t9          # Rust 1.89+; puts `t9` in ~/.cargo/bin
+curl -fsSL https://raw.githubusercontent.com/anupkalburgi/t9/main/install.sh | sh
 ```
+
+This downloads the binary for your machine (macOS or Linux, arm64 or x86_64) from the
+[latest release](https://github.com/anupkalburgi/t9/releases/latest), verifies its checksum, and installs it to
+`~/.local/bin`. Set `T9_INSTALL_DIR` to install elsewhere, or `T9_VERSION=v0.1.1` to pin a version. To build from
+source instead: `cargo install --git https://github.com/anupkalburgi/t9 t9` (Rust 1.89+).
 
 Connect your agents:
 
@@ -61,7 +65,7 @@ t9 context        # the brief an agent reads at session start
 
 ## Status
 
-Early but complete enough for daily use on macOS. Linux should work but isn't tested yet. See the
+Early but complete enough for daily use. Developed on macOS; Linux is built and tested in CI. See the
 [roadmap](docs/project-plan/roadmap.md) for what's next: a local server for instant UI updates, an MCP server,
 and importing existing plan documents.
 

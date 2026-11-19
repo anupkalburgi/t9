@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1
+
+- Prebuilt binaries for macOS (Apple Silicon, Intel) and Linux (x86_64, ARM64), and a one-line installer:
+  `curl -fsSL https://raw.githubusercontent.com/anupkalburgi/t9/main/install.sh | sh`.
+- Fix: concurrent writers could fail with a duplicate-id error while indexing the same journal entry. Index
+  writes are now atomic (the index is rebuilt automatically on first run).
+- Fix: `t9 … | head` no longer reports a broken pipe.
+- CI now also runs on Linux.
+
 ## 0.1.0
 
 First release.

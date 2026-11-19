@@ -5,19 +5,19 @@ they record. It takes about 10 minutes. The vocabulary is explained in [concepts
 
 ## 1. Install
 
-You need Rust 1.89 or newer. If `cargo` is missing:
-
 ```sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source "$HOME/.cargo/env"
+curl -fsSL https://raw.githubusercontent.com/anupkalburgi/t9/main/install.sh | sh
+t9 --version
 ```
 
-Then build and install `t9`:
+The script picks the right binary (macOS or Linux, arm64 or x86_64), checks it against the release's
+`SHA256SUMS`, and installs it to `~/.local/bin` (`T9_INSTALL_DIR` to change, `T9_VERSION` to pin). Run it again
+to upgrade.
+
+From source, with Rust 1.89 or newer:
 
 ```sh
-git clone https://github.com/anupkalburgi/t9 && cd t9
-cargo install --path crates/t9      # installs ~/.cargo/bin/t9
-t9 --version
+cargo install --git https://github.com/anupkalburgi/t9 t9
 ```
 
 ## 2. The vault and its history
