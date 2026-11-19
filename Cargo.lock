@@ -1741,6 +1741,7 @@ dependencies = [
  "assert_cmd",
  "chrono",
  "clap",
+ "libc",
  "serde",
  "serde_json",
  "t9-core",

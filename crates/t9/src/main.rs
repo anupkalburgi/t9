@@ -912,6 +912,11 @@ fn session_cmd(app: &mut App, cmd: SessionCmd) -> Result<()> {
 }
 
 fn main() -> ExitCode {
+    // Exit quietly when the reader goes away (`t9 journal | head`) instead of panicking on a broken pipe.
+    // SAFETY: restoring the default SIGPIPE disposition before any other threads exist.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     let cli = Cli::parse();
     let json = cli.json;
     match run(cli) {
