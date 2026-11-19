@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter};
 use crate::model::*;
 use crate::{Error, Result};
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 const SCHEMA: &str = r#"
 CREATE TABLE projects(
@@ -53,14 +53,19 @@ CREATE INDEX sessions_harness ON sessions(agent, harness_id);
 CREATE TABLE files(path TEXT PRIMARY KEY, project TEXT NOT NULL, kind TEXT NOT NULL, mtime INTEGER NOT NULL, size INTEGER NOT NULL);
 CREATE INDEX files_project ON files(project);
 
--- Full-text search: external-content FTS5 kept in sync by triggers. Rows are never REPLACEd (REPLACE does not
--- fire delete triggers), always deleted and re-inserted.
+-- Full-text search: external-content FTS5 kept in sync by insert, update and delete triggers. Rows are written
+-- with a single `INSERT … ON CONFLICT DO UPDATE` (atomic, so concurrent writers never race) and never REPLACEd
+-- (REPLACE does not fire delete triggers).
 CREATE VIRTUAL TABLE items_fts USING fts5(title, body, content = 'items', content_rowid = 'rid', tokenize = 'porter unicode61');
 CREATE TRIGGER items_ai AFTER INSERT ON items BEGIN
   INSERT INTO items_fts(rowid, title, body) VALUES (new.rid, new.title, new.body);
 END;
 CREATE TRIGGER items_ad AFTER DELETE ON items BEGIN
   INSERT INTO items_fts(items_fts, rowid, title, body) VALUES ('delete', old.rid, old.title, old.body);
+END;
+CREATE TRIGGER items_au AFTER UPDATE ON items BEGIN
+  INSERT INTO items_fts(items_fts, rowid, title, body) VALUES ('delete', old.rid, old.title, old.body);
+  INSERT INTO items_fts(rowid, title, body) VALUES (new.rid, new.title, new.body);
 END;
 CREATE VIRTUAL TABLE entries_fts USING fts5(body, content = 'entries', content_rowid = 'rid', tokenize = 'porter unicode61');
 -- Title matches weigh 4x body matches.
@@ -70,6 +75,10 @@ CREATE TRIGGER entries_ai AFTER INSERT ON entries BEGIN
 END;
 CREATE TRIGGER entries_ad AFTER DELETE ON entries BEGIN
   INSERT INTO entries_fts(entries_fts, rowid, body) VALUES ('delete', old.rid, old.body);
+END;
+CREATE TRIGGER entries_au AFTER UPDATE ON entries BEGIN
+  INSERT INTO entries_fts(entries_fts, rowid, body) VALUES ('delete', old.rid, old.body);
+  INSERT INTO entries_fts(rowid, body) VALUES (new.rid, new.body);
 END;
 "#;
 
@@ -247,10 +256,11 @@ pub fn project_for_remote(c: &Connection, remote: &str) -> Result<Vec<String>> {
 pub fn upsert_item(c: &Connection, it: &Item) -> Result<()> {
     let m = &it.meta;
     let num = split_item_id(&m.id).map(|(_, n)| n).unwrap_or(0);
-    c.prepare_cached("DELETE FROM items WHERE id = ?")?.execute([&m.id])?;
     c.prepare_cached(
         "INSERT INTO items(id, project, num, kind, title, status, parent, priority, updated, meta, body, path)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+         ON CONFLICT(id) DO UPDATE SET project=?2, num=?3, kind=?4, title=?5, status=?6, parent=?7, priority=?8,
+           updated=?9, meta=?10, body=?11, path=?12",
     )?
     .execute(params![
         m.id,
@@ -338,9 +348,9 @@ pub fn max_item_num(c: &Connection, project: &str) -> Result<u32> {
 
 pub fn insert_entry(c: &Connection, e: &Entry, file: &str) -> Result<()> {
     let m = &e.meta;
-    c.prepare_cached("DELETE FROM entries WHERE id = ?")?.execute([&m.id])?;
     c.prepare_cached(
-        "INSERT INTO entries(id, project, item, session, kind, at, meta, body, file) VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO entries(id, project, item, session, kind, at, meta, body, file) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
+         ON CONFLICT(id) DO UPDATE SET project=?2, item=?3, session=?4, kind=?5, at=?6, meta=?7, body=?8, file=?9",
     )?
     .execute(params![m.id, e.project, m.item, m.session, m.kind.as_str(), ts(&m.at), json(m), e.body, file])?;
     Ok(())

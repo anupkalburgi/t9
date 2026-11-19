@@ -230,6 +230,9 @@ fn hand_edits_are_picked_up_and_reindex_is_lossless() {
     let err = s.err(&repo, &["update", "APP-1", "--title", "x", "--rev", &(rev - 1).to_string()]);
     assert!(err.contains("conflict"), "{err}");
     s.ok(&repo, &["update", "APP-1", "--title", "Crash on save (Mac)", "--rev", &rev.to_string()]);
+    // Search follows updates: the new title is found, and the item is listed once.
+    let hits = s.json(&repo, &["search", "mac"]);
+    assert_eq!(hits.as_array().unwrap().iter().filter(|h| h["id"] == "APP-1").count(), 1, "{hits}");
 
     // Deleting an item file removes it from the index.
     fs::remove_file(&path).unwrap();
