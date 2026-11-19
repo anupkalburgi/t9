@@ -14,6 +14,11 @@ The script picks the right binary (macOS or Linux, arm64 or x86_64), checks it a
 `SHA256SUMS`, and installs it to `~/.local/bin` (`T9_INSTALL_DIR` to change, `T9_VERSION` to pin). Run it again
 to upgrade.
 
+If `~/.local/bin` is not on your `PATH`, the script adds one line to your shell's startup file (`~/.zshrc`;
+`~/.bash_profile` or `~/.bashrc` for bash; `conf.d/t9.fish` for fish; `~/.profile` otherwise), marked
+"Added by the t9 installer", and never twice. Open a new terminal, or run the `export PATH=…` line it prints, to
+use `t9` right away. Set `T9_NO_MODIFY_PATH=1` to skip this and add it yourself.
+
 From source, with Rust 1.89 or newer:
 
 ```sh

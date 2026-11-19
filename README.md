@@ -21,8 +21,10 @@ curl -fsSL https://raw.githubusercontent.com/anupkalburgi/t9/main/install.sh | s
 ```
 
 This downloads the binary for your machine (macOS or Linux, arm64 or x86_64) from the
-[latest release](https://github.com/anupkalburgi/t9/releases/latest), verifies its checksum, and installs it to
-`~/.local/bin`. Set `T9_INSTALL_DIR` to install elsewhere, or `T9_VERSION=v0.1.1` to pin a version. To build from
+[latest release](https://github.com/anupkalburgi/t9/releases/latest), verifies its checksum, installs it to
+`~/.local/bin`, and adds that folder to your `PATH` in your shell's startup file if it isn't there yet. Open a new
+terminal afterwards. Options: `T9_INSTALL_DIR` to install elsewhere, `T9_VERSION=v0.1.1` to pin a version,
+`T9_NO_MODIFY_PATH=1` to leave your shell files alone. To build from
 source instead: `cargo install --git https://github.com/anupkalburgi/t9 t9` (Rust 1.89+).
 
 Connect your agents:

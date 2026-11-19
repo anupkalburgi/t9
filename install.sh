@@ -6,6 +6,7 @@
 # Environment:
 #   T9_VERSION       release tag to install, e.g. v0.1.1 (default: the latest release)
 #   T9_INSTALL_DIR   where to put the binary (default: ~/.local/bin)
+#   T9_NO_MODIFY_PATH=1  do not add the install directory to your shell's startup file
 #   T9_DOWNLOAD_URL  base URL of the release assets (for mirrors and testing)
 set -eu
 
@@ -77,10 +78,40 @@ chmod 755 "${INSTALL_DIR}/.t9.new"
 mv -f "${INSTALL_DIR}/.t9.new" "${INSTALL_DIR}/t9"
 
 say "installed $("${INSTALL_DIR}/t9" --version) to ${INSTALL_DIR}/t9"
-case ":${PATH}:" in
-  *":${INSTALL_DIR}:"*) ;;
-  *) say "add ${INSTALL_DIR} to your PATH, e.g.: echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.zshrc" ;;
+
+# Put the install directory on PATH for future shells (like rustup does), unless it already is.
+# Written as $HOME/... when possible, so the line keeps working if the home directory moves.
+case "$INSTALL_DIR" in
+  "$HOME"/*) path_expr="\$HOME/${INSTALL_DIR#"$HOME"/}" ;;
+  *) path_expr="$INSTALL_DIR" ;;
 esac
+on_path=0
+case ":${PATH}:" in *":${INSTALL_DIR}:"*) on_path=1 ;; esac
+if [ "$on_path" = 0 ]; then
+  if [ "${T9_NO_MODIFY_PATH:-}" = 1 ]; then
+    say "${INSTALL_DIR} is not on your PATH; add this to your shell's startup file:"
+    printf '  export PATH="%s:$PATH"\n' "$path_expr"
+  else
+    shell_name="$(basename "${SHELL:-sh}")"
+    case "$shell_name" in
+      zsh) rc="${ZDOTDIR:-$HOME}/.zshrc"; line="export PATH=\"${path_expr}:\$PATH\"" ;;
+      bash)
+        if [ "$os" = Darwin ]; then rc="$HOME/.bash_profile"; else rc="$HOME/.bashrc"; fi
+        line="export PATH=\"${path_expr}:\$PATH\""
+        ;;
+      fish) rc="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/t9.fish"; line="fish_add_path ${path_expr}" ;;
+      *) rc="$HOME/.profile"; line="export PATH=\"${path_expr}:\$PATH\"" ;;
+    esac
+    if [ -f "$rc" ] && grep -qF "$line" "$rc"; then
+      say "${rc} already adds ${INSTALL_DIR} to PATH"
+    else
+      mkdir -p "$(dirname "$rc")"
+      printf '\n# Added by the t9 installer\n%s\n' "$line" >> "$rc"
+      say "added ${INSTALL_DIR} to PATH in ${rc} (set T9_NO_MODIFY_PATH=1 to skip this)"
+    fi
+    say "new terminals will find t9; in this one, run:  export PATH=\"${INSTALL_DIR}:\$PATH\""
+  fi
+fi
 cat <<EOF
 
 Next:

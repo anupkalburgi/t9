@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The installer adds `~/.local/bin` to your `PATH` (zsh, bash, fish, or `~/.profile`) when it isn't there
+  already; `T9_NO_MODIFY_PATH=1` skips this.
+
 ## 0.1.1
 
 - Prebuilt binaries for macOS (Apple Silicon, Intel) and Linux (x86_64, ARM64), and a one-line installer:
