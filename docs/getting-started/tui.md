@@ -12,7 +12,7 @@ while it is open. Anything you record from it is attributed to `human` and commi
 
 | Screen | Shows |
 |---|---|
-| Projects | Every project with open items, open issues, accepted decisions and last activity. `Enter` opens one. |
+| Projects | Every project with open items, open issues, accepted decisions and last activity. `Enter` opens one. Folders where agents worked without a project are listed as **⚠ not set up**; `i` creates the project there (name and key pre-filled) and moves the notes waiting in the inbox into it. Opening `t9 tui` inside such a folder selects it. |
 | 1 Overview | The project at a glance, for a human: **waiting on you** (open questions, proposed decisions, blocked work), the last handoff, what the agent is focused on, work in progress, each plan with a progress bar, open issues, next tasks, decisions in force, options ruled out, global rules, parked ideas and recent activity ("2h ago"). Times use a 12-hour clock in the machine's local time zone (`8:11 PM EST`). One line per item, cut to the width of the pane; two columns on wide terminals. `b` switches to the agent's brief, exactly as an agent receives it. |
 | 2 Items | The plan as a tree (plan → phase → feature → task, with bugs, revisits and ideas). The detail pane shows the selected item: fields, body, the decisions that apply to it, children and journal. `c` shows closed items. |
 | 3 Decisions | The decision log, newest first, including rejected and superseded decisions, with the Why and rejected alternatives in the detail pane. |

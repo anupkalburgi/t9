@@ -59,6 +59,10 @@ To use a different vault for a while, for example for experiments, set `T9_VAULT
 
 ## 3. Link your first project
 
+If you skip this and just start an agent in the folder, t9 still notices: the agent is told to ask you in its
+first reply (with a suggested name and key), its notes wait in the inbox, and the folder appears under
+"not set up" in `t9 tui`, `t9 project ls` and `t9 doctor` until you set it up. To do it yourself:
+
 ```sh
 cd ~/code/billing-service
 t9 context

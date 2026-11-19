@@ -11,6 +11,7 @@ pub mod index;
 pub mod journal;
 pub mod model;
 pub mod store;
+pub mod unlinked;
 pub mod vcs;
 
 pub use env::Env;

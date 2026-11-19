@@ -1,7 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.1.2
 
+- Folders where an agent works without a t9 project are no longer silent: the brief tells the agent to raise it
+  in its first reply with a ready-made `t9 project init --name … --key …`, the Claude Code message hook reminds
+  once per session, and the folder shows as "not set up" in `t9 tui` (press `i` to create the project there),
+  `t9 project ls` and `t9 doctor`.
 - Fix: entries written in the same millisecond could sort out of order (seen as the wrong LATEST change).
   Ids now come from a monotonic ULID generator.
 - The installer adds `~/.local/bin` to your `PATH` (zsh, bash, fish, or `~/.profile`) when it isn't there

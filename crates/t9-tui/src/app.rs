@@ -49,6 +49,7 @@ pub enum InputPurpose {
     Log { item: Option<String> },
     Decide { status: Status },
     Attach { entry: String },
+    CreateProject { folder: String },
 }
 
 #[derive(Clone, Debug)]
@@ -110,6 +111,9 @@ pub struct App {
     pub tab: Tab,
     pub mode: Mode,
     pub projects: Vec<ProjectRow>,
+    /// Folders where agents worked without a project; listed after the projects.
+    pub unlinked: Vec<t9_core::unlinked::UnlinkedFolder>,
+    /// Selection over projects followed by unlinked folders.
     pub proj_sel: usize,
     pub key: Option<String>,
     /// The agent's brief as text (shown with `b`) and as data (the Overview).
@@ -159,6 +163,7 @@ impl App {
             tab: Tab::Brief,
             mode: Mode::Normal,
             projects: vec![],
+            unlinked: vec![],
             proj_sel: 0,
             key: None,
             brief: String::new(),
@@ -184,6 +189,7 @@ impl App {
             touched: Default::default(),
         };
         app.projects = data::projects(&mut app.store)?;
+        app.unlinked = data::unlinked(&mut app.store)?;
         if let Some(k) = initial {
             app.open_project(&k)?;
         }
@@ -238,7 +244,8 @@ impl App {
         self.refreshed_at = chrono::Local::now();
         let Some(key) = self.key.clone() else {
             self.projects = data::projects(&mut self.store)?;
-            self.proj_sel = clamp(self.proj_sel, self.projects.len());
+            self.unlinked = data::unlinked(&mut self.store)?;
+            self.proj_sel = clamp(self.proj_sel, self.projects.len() + self.unlinked.len());
             return Ok(());
         };
         let keep_item = self.items.get(self.item_sel).map(|(_, i)| i.meta.id.clone());
@@ -401,7 +408,9 @@ impl App {
 
     fn move_sel(&mut self, delta: isize) -> Result<()> {
         match (self.screen, self.tab) {
-            (Screen::Projects, _) => self.proj_sel = step(self.proj_sel, self.projects.len(), delta),
+            (Screen::Projects, _) => {
+                self.proj_sel = step(self.proj_sel, self.projects.len() + self.unlinked.len(), delta)
+            }
             (_, Tab::Brief) => self.brief_scroll = (self.brief_scroll as isize + delta).max(0) as u16,
             (_, Tab::Items) => self.item_sel = step(self.item_sel, self.items.len(), delta),
             (_, Tab::Decisions) => self.dec_sel = step(self.dec_sel, self.decisions.len(), delta),
@@ -448,11 +457,35 @@ impl App {
         Ok(Action::None)
     }
 
+    /// The unlinked folder selected on the Projects screen, if the selection is past the projects.
+    pub fn selected_folder(&self) -> Option<&t9_core::unlinked::UnlinkedFolder> {
+        self.proj_sel.checked_sub(self.projects.len()).and_then(|i| self.unlinked.get(i))
+    }
+
+    /// Selects an unlinked folder on the Projects screen (used when the TUI is opened inside one).
+    pub fn select_folder(&mut self, folder: &str) {
+        if let Some(i) = self.unlinked.iter().position(|u| u.cwd == folder) {
+            self.proj_sel = self.projects.len() + i;
+        }
+    }
+
     fn projects_key(&mut self, k: KeyEvent) -> Result<Action> {
         match k.code {
             KeyCode::Esc => return Ok(Action::Quit),
-            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-                if let Some(row) = self.projects.get(self.proj_sel) {
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') | KeyCode::Char('i') => {
+                if let Some(u) = self.selected_folder().cloned() {
+                    self.mode = Mode::Input(Input {
+                        prompt: format!(
+                            "Create a project for {}",
+                            t9_core::env::display_path(std::path::Path::new(&u.cwd))
+                        ),
+                        hint: "NAME | KEY (edit if you like). Notes agents left in this folder move into it.".into(),
+                        buffer: format!("{} | {}", u.name, u.key),
+                        purpose: InputPurpose::CreateProject { folder: u.cwd },
+                    });
+                } else if k.code != KeyCode::Char('i')
+                    && let Some(row) = self.projects.get(self.proj_sel)
+                {
                     let key = row.project.meta.key.clone();
                     self.open_project(&key)?;
                 }
@@ -567,6 +600,17 @@ impl App {
                     InputPurpose::Attach { entry } => {
                         let e = data::attach(&mut self.store, &entry, &text)?;
                         format!("filed {} under {}", short_id(&e.meta.id), e.meta.item.unwrap_or_default())
+                    }
+                    InputPurpose::CreateProject { folder } => {
+                        let (p, moved) = data::create_project(&mut self.store, &folder, &text)?;
+                        let key = p.meta.key.clone();
+                        self.after_write(format!(
+                            "created {} ({key}) for {}; {moved} inbox notes moved in",
+                            p.meta.name,
+                            t9_core::env::display_path(std::path::Path::new(&folder))
+                        ))?;
+                        self.open_project(&key)?;
+                        return Ok(Action::None);
                     }
                 };
                 self.after_write(msg)?;

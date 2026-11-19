@@ -81,6 +81,20 @@ fn run_inner(store: &mut Store, caller: &Caller, cmd: HookCmd) -> Result<()> {
         }
         "prompt" => {
             // Stdout of a UserPromptSubmit hook is added to the agent's context; print nothing unless useful.
+            if store.resolve(&caller)?.project.is_none() {
+                // Once per session: make sure the user hears that this folder has no project yet.
+                let session = payload.session_id.clone().unwrap_or_else(|| "default".into());
+                if store.first_time_for("unlinked", &session)? {
+                    store.note_unlinked(&caller.cwd, AGENT_CLAUDE)?;
+                    let (name, key) = store.suggested_project(&caller.cwd)?;
+                    println!(
+                        "t9: this folder is not linked to a t9 project, so notes go to the inbox. If you have not \
+                         told the user yet, tell them now and suggest `{}` (or `t9 project link KEY` for an \
+                         existing project); run it once they agree.",
+                        t9_core::unlinked::init_command(&name, &key)
+                    );
+                }
+            }
             if let Some(text) =
                 t9_core::decisions::prompt_context(store, &caller, payload.prompt.as_deref().unwrap_or(""))?
             {

@@ -177,6 +177,21 @@ pub fn decide(store: &mut Store, caller: &Caller, text: &str, status: Status) ->
     Ok(store.decide(caller, DecisionInput { title, because, status, ..Default::default() })?)
 }
 
+pub fn unlinked(store: &mut Store) -> Result<Vec<t9_core::unlinked::UnlinkedFolder>> {
+    Ok(store.unlinked_folders()?)
+}
+
+/// `Name | KEY` (the key is optional) creates a project for `folder` and moves its inbox notes into it.
+pub fn create_project(store: &mut Store, folder: &str, text: &str) -> Result<(Project, usize)> {
+    let (name, key) = match text.split_once('|') {
+        Some((n, k)) => (n.trim().to_string(), Some(k.trim().to_string()).filter(|k| !k.is_empty())),
+        None => (text.trim().to_string(), None),
+    };
+    let p = store.init_project(&name, key.as_deref(), "", Some(std::path::Path::new(folder)))?;
+    let moved = store.adopt_inbox(&p.meta.key)?;
+    Ok((p, moved))
+}
+
 pub fn attach(store: &mut Store, entry: &str, item: &str) -> Result<Entry> {
     Ok(store.attach(entry, item)?)
 }

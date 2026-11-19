@@ -16,9 +16,10 @@ interface you use.
 - Continue from **Last handoff** and **Current focus**. Mention the item ids you are picking up.
 - Respect **Decisions that apply to your focus**, **Rules for every project** and **Ruled out**. Do not re-open
   them unless the user does or you have new information; if you do, say which decision you are questioning.
-- If the brief says the directory is **not linked to a project**: show the user the suggested projects and ask
-  which one this work belongs to. Then run `t9 project link KEY`, or `t9 project init --name "Name" [--key XY]`
-  for a new project. Do not pick silently.
+- If the brief says the folder is **not linked to a t9 project**, say so to the user in your **first reply**,
+  before other work: offer the suggested `t9 project init --name "…" --key …` from the brief (they may pick another
+  name or key), or `t9 project link KEY` for a similar existing project it lists. Run it once they agree. Do not
+  create or link a project without asking, and do not stay silent about it.
 
 ## Decisions: the most important part
 

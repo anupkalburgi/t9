@@ -867,6 +867,22 @@ fn project_cmd(app: &mut App, cmd: ProjectCmd) -> Result<()> {
                     println!("{:<8} {:<28} {}", p.meta.key, p.meta.name, roots);
                 }
             })?;
+            if !json {
+                let unlinked = app.store.unlinked_folders()?;
+                if !unlinked.is_empty() {
+                    println!("\nNot set up yet (agents worked here without a project):");
+                    for u in &unlinked {
+                        println!(
+                            "  {}  ({} · {})\n    cd {} && {}",
+                            t9_core::env::display_path(std::path::Path::new(&u.cwd)),
+                            u.agent,
+                            t9_core::clock::date_time(&u.last_seen),
+                            t9_core::env::display_path(std::path::Path::new(&u.cwd)),
+                            t9_core::unlinked::init_command(&u.name, &u.key)
+                        );
+                    }
+                }
+            }
         }
         ProjectCmd::Show { key } => {
             let p = match key {

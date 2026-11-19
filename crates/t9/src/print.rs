@@ -323,6 +323,14 @@ pub fn doctor(store: &mut Store, json: bool) -> Result<()> {
             ));
         }
     }
+    for u in store.unlinked_folders()? {
+        r.findings.push(format!(
+            "{} has no project ({} worked there); run there: {}",
+            display_path(Path::new(&u.cwd)),
+            u.agent,
+            t9_core::unlinked::init_command(&u.name, &u.key)
+        ));
+    }
     let unfiled = store
         .entries(&EntryFilter {
             unfiled: true,

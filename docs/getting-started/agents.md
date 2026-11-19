@@ -18,8 +18,9 @@ t9 context
 Read it and continue from the **Last handoff** and **Current focus**. Tell the user which item ids you are
 picking up.
 
-If the brief says **this directory is not linked to a project**, show the user the suggested projects and ask
-which one the work belongs to. Then run one of these; don't pick silently:
+If the brief says **this folder is not linked to a t9 project**, tell the user in your first reply, before other
+work. The brief gives a ready-made command with a suggested name and key; offer it, or link a similar existing
+project it lists. Run it once they agree; don't create or link one silently:
 
 ```sh
 t9 project link BIL                                   # existing project

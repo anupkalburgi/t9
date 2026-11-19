@@ -19,7 +19,16 @@ pub use app::{Action, App, Mode, Screen, Tab};
 pub fn run(mut store: Store, caller: &Caller) -> Result<()> {
     let initial = store.resolve(caller)?.project.map(|p| p.meta.key);
     store.commit_on_drop = false;
+    // Opened inside a git repository that has no project: offer to set it up.
+    let unlinked_here = initial.is_none() && t9_core::git::discover(&caller.cwd).is_some();
+    if unlinked_here {
+        store.note_unlinked(&caller.cwd, "human")?;
+    }
+    let folder = store.folder_of(&caller.cwd);
     let mut app = App::new(store, initial)?;
+    if unlinked_here {
+        app.select_folder(&folder);
+    }
     let mut terminal = ratatui::init();
     let result = event_loop(&mut terminal, &mut app);
     ratatui::restore();
@@ -288,6 +297,40 @@ mod tests {
         key(&mut f.app, KeyCode::Enter);
         assert_eq!(f.app.tab, Tab::Items);
         assert_eq!(f.app.selected_id().as_deref(), Some("DM-3"));
+    }
+
+    #[test]
+    fn an_unlinked_folder_can_be_set_up_from_the_project_list() {
+        let mut f = fixture();
+        // An agent worked in a repository with no project and left a note in the inbox.
+        let root = f.app.store.env.vault.parent().unwrap().to_path_buf();
+        let repo = root.join("work/payments");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::write(repo.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        let c = Caller { cwd: repo.clone(), agent: Some("claude-code".into()), ..Default::default() };
+        f.app
+            .store
+            .log(&c, LogInput { kind: EntryKind::Note, body: "webhook retries".into(), item: None, refs: vec![] })
+            .unwrap();
+
+        key(&mut f.app, KeyCode::Esc);
+        let s = screen(&mut f.app);
+        assert!(s.contains("1 folder(s) not set up") && s.contains("⚠ not set up"), "{s}");
+        let folder = f.app.unlinked[0].cwd.clone();
+        f.app.select_folder(&folder);
+        let s = screen(&mut f.app);
+        assert!(s.contains("Not linked to a t9 project") && s.contains("--key PAY"), "{s}");
+
+        key(&mut f.app, KeyCode::Char('i'));
+        match &f.app.mode {
+            Mode::Input(i) => assert_eq!(i.buffer, "payments | PAY"),
+            other => panic!("expected the create-project prompt, got {other:?}"),
+        }
+        key(&mut f.app, KeyCode::Enter);
+        assert_eq!(f.app.screen, Screen::Project);
+        assert_eq!(f.app.key.as_deref(), Some("PAY"));
+        assert!(f.app.message.as_deref().unwrap().contains("1 inbox notes moved in"), "{:?}", f.app.message);
+        assert!(f.app.unlinked.is_empty() || f.app.unlinked.iter().all(|u| u.cwd != folder));
     }
 
     #[test]

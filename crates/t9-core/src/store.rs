@@ -256,6 +256,18 @@ fn derive_key(name: &str) -> String {
     key
 }
 
+/// A key derived from `name` that no project uses yet (`BS`, then `BS2`, …).
+pub(crate) fn unique_key(name: &str, existing: &HashSet<String>) -> String {
+    let base = derive_key(name);
+    let mut k = base.clone();
+    let mut n = 2;
+    while existing.contains(&k) || k == INBOX || k == GLOBAL {
+        k = format!("{base}{n}");
+        n += 1;
+    }
+    k
+}
+
 fn item_file_name(id: &str, title: &str) -> String {
     let mut slug = slugify(title);
     if slug.len() > 60 {
@@ -656,7 +668,7 @@ impl Store {
     }
 
     /// Root and remote to register for `cwd`: the git work tree top if inside one, else `cwd`.
-    fn root_and_remote(&self, cwd: &Path) -> (String, Option<String>) {
+    pub(crate) fn root_and_remote(&self, cwd: &Path) -> (String, Option<String>) {
         let cwd = canonical(cwd);
         match git::discover(&cwd) {
             Some(g) => (path_str(&g.root), g.remote),
@@ -689,16 +701,7 @@ impl Store {
                 }
                 k
             }
-            None => {
-                let base = derive_key(name);
-                let mut k = base.clone();
-                let mut n = 2;
-                while existing.contains(&k) || k == INBOX || k == GLOBAL {
-                    k = format!("{base}{n}");
-                    n += 1;
-                }
-                k
-            }
+            None => unique_key(name, &existing),
         };
         let (mut roots, mut remotes) = (vec![], vec![]);
         if let Some(cwd) = cwd {
@@ -1166,6 +1169,9 @@ impl Store {
             cwd: (key == INBOX).then(|| res.cwd.clone()),
             refs: input.refs,
         };
+        if key == INBOX {
+            self.note_unlinked(Path::new(&res.cwd), &meta.agent)?;
+        }
         self.append_entry(&key, meta, &input.body)
     }
 

@@ -202,7 +202,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
     let hints = match (app.screen, app.tab) {
-        (Screen::Projects, _) => "↑↓ select · Enter open · / search all · r refresh · ? help · q quit",
+        (Screen::Projects, _) => "↑↓ select · Enter open · i set up a folder · / search all · ? help · q quit",
         (_, Tab::Brief) => {
             "? help · ↑↓ scroll · b agent brief · d decide · x reject · a add · n note · / search · 1-5 tabs"
         }
@@ -240,28 +240,69 @@ fn draw_projects(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled(last, Style::new().fg(Color::DarkGray)),
             ]))
         })
-        .collect();
-    let empty = app.projects.is_empty();
+        .collect::<Vec<_>>();
+    // Folders where agents worked without a project, so the human can set them up.
+    let mut rows = rows;
+    for u in &app.unlinked {
+        let notes = if u.inbox_entries > 0 { format!(" · {} notes in inbox", u.inbox_entries) } else { String::new() };
+        rows.push(ListItem::new(Line::from(vec![
+            Span::styled("⚠ not set up ", Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{:<26}", first_line(&display_path(std::path::Path::new(&u.cwd)), 24)), Style::new()),
+            Span::styled(format!("{} · {}{notes}", u.agent, ago(&u.last_seen)), Style::new().fg(Color::DarkGray)),
+        ])));
+    }
+    let empty = rows.is_empty();
     let mut st = ListState::default().with_selected(if empty { None } else { Some(app.proj_sel) });
+    let title = if app.unlinked.is_empty() {
+        "Projects".to_string()
+    } else {
+        format!("Projects · {} folder(s) not set up: press i", app.unlinked.len())
+    };
     f.render_stateful_widget(
-        List::new(rows).block(panel("Projects", true)).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
+        List::new(rows).block(panel(&title, true)).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),
         left,
         &mut st,
     );
-    let text = match app.projects.get(app.proj_sel) {
-        Some(r) => {
-            let mut lines = vec![Line::from(Span::styled(r.project.meta.name.clone(), Style::new().bold()))];
-            for root in &r.project.meta.roots {
-                lines.push(Line::from(format!("root    {}", display_path(std::path::Path::new(root)))));
-            }
-            for rem in &r.project.meta.remotes {
-                lines.push(Line::from(format!("remote  {rem}")));
-            }
-            lines.push(Line::from(""));
-            lines.extend(r.project.description.lines().map(|l| Line::from(l.to_string())));
-            Text::from(lines)
+    let text = if let Some(u) = app.selected_folder() {
+        let mut lines = vec![
+            Line::from(Span::styled("Not linked to a t9 project", Style::new().bold().fg(Color::Yellow))),
+            Line::from(""),
+            Line::from(format!("folder   {}", display_path(std::path::Path::new(&u.cwd)))),
+            Line::from(format!("seen     {} by {}", ago(&u.last_seen), u.agent)),
+        ];
+        if u.inbox_entries > 0 {
+            lines.push(Line::from(format!("inbox    {} notes waiting for a project", u.inbox_entries)));
         }
-        None => Text::from("No projects yet.\n\nIn a project directory run:\n  t9 project init --name \"Name\""),
+        lines.push(Line::from(""));
+        lines.push(Line::from("Agents working here record nothing under a project until it is set up."));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::raw("Press "),
+            Span::styled("i", Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(format!(" to create {} ({}) here, or run in that folder:", u.name, u.key)),
+        ]));
+        lines.push(Line::from(Span::styled(
+            format!("  {}", t9_core::unlinked::init_command(&u.name, &u.key)),
+            Style::new().fg(Color::Cyan),
+        )));
+        lines.push(Line::from("  t9 project link KEY      (if it belongs to an existing project)"));
+        Text::from(lines)
+    } else {
+        match app.projects.get(app.proj_sel) {
+            Some(r) => {
+                let mut lines = vec![Line::from(Span::styled(r.project.meta.name.clone(), Style::new().bold()))];
+                for root in &r.project.meta.roots {
+                    lines.push(Line::from(format!("root    {}", display_path(std::path::Path::new(root)))));
+                }
+                for rem in &r.project.meta.remotes {
+                    lines.push(Line::from(format!("remote  {rem}")));
+                }
+                lines.push(Line::from(""));
+                lines.extend(r.project.description.lines().map(|l| Line::from(l.to_string())));
+                Text::from(lines)
+            }
+            None => Text::from("No projects yet.\n\nIn a project folder run:\n  t9 project init --name \"Name\""),
+        }
     };
     f.render_widget(Paragraph::new(text).wrap(Wrap { trim: false }).block(panel("Details", false)), right);
 }

@@ -162,7 +162,7 @@ fn worktrees_and_subdirs_resolve_to_the_project() {
     let w = s.json(&other, &["whereami"]);
     assert!(w["resolution"]["project"].is_null());
     let brief = s.ok(&other, &["context"]);
-    assert!(brief.contains("not linked to a project") && brief.contains("(WID)"), "{brief}");
+    assert!(brief.contains("not linked to a t9 project") && brief.contains("(WID)"), "{brief}");
     let err = s.err(&other, &["add", "task", "x"]);
     assert!(err.contains("t9 project link"), "{err}");
 
@@ -483,4 +483,41 @@ fn decisions_are_recorded_and_recalled_by_scope_area_and_topic() {
     assert_eq!(s.json(&other, &["check", "uv"])[0]["id"], "GLOBAL-1");
     // GLOBAL is never suggested for an unlinked directory and cannot be taken as a key.
     assert!(s.err(&other, &["project", "init", "--key", "GLOBAL", "--no-root"]).contains("must be"));
+}
+
+#[test]
+fn an_unlinked_folder_is_surfaced_to_the_human_until_set_up() {
+    // A co-worker installs t9 and starts Claude Code in a repository that has no project yet.
+    let s = Sandbox::new();
+    let repo = s.repo("billing-service", "git@github.com:acme/billing-service.git");
+    let hook = |event: &str, extra: serde_json::Value| {
+        let mut payload = serde_json::json!({"session_id": "s1", "cwd": repo});
+        payload.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        let out = s.cmd(&s.root).args(["hook", "claude", event]).write_stdin(payload.to_string()).output().unwrap();
+        assert!(out.status.success());
+        String::from_utf8(out.stdout).unwrap()
+    };
+
+    // Session start: the brief tells Claude to tell the user, with a ready-to-run command.
+    let brief = hook("session-start", serde_json::json!({"source": "startup"}));
+    assert!(brief.contains("Tell the user in your first reply"), "{brief}");
+    assert!(brief.contains("`t9 project init --name \"billing-service\" --key BS`"), "{brief}");
+
+    // First message: one reminder; later messages: none.
+    let first = hook("prompt", serde_json::json!({"prompt": "fix the refund bug"}));
+    assert!(first.contains("not linked to a t9 project") && first.contains("--key BS"), "{first}");
+    assert!(!hook("prompt", serde_json::json!({"prompt": "and the tests"})).contains("not linked"));
+
+    // The agent's notes go to the inbox; the human sees the folder in `project ls` and `doctor`.
+    s.ok(&repo, &["--agent", "claude-code", "log", "refund handler returns 422"]);
+    let ls = s.ok(&s.root, &["project", "ls"]);
+    assert!(ls.contains("Not set up yet") && ls.contains("billing-service") && ls.contains("--key BS"), "{ls}");
+    assert!(s.ok(&s.root, &["doctor"]).contains("has no project (claude-code worked there)"));
+
+    // Running the suggested command creates the project, adopts the note, and clears the warning.
+    let out = s.ok(&repo, &["project", "init", "--name", "billing-service", "--key", "BS"]);
+    assert!(out.contains("moved 1 inbox entries"), "{out}");
+    assert!(!s.ok(&s.root, &["project", "ls"]).contains("Not set up yet"));
+    let brief = hook("session-start", serde_json::json!({"source": "startup", "session_id": "s2"}));
+    assert!(brief.contains("# billing-service (BS)"), "{brief}");
 }

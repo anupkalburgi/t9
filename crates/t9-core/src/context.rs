@@ -43,6 +43,8 @@ pub struct Brief {
     pub ruled_out: Vec<Item>,
     /// Open ideas, parked for later.
     pub ideas: Vec<Item>,
+    /// For an unlinked folder: the suggested project name and key.
+    pub suggested: Option<(String, String)>,
     pub recent: Vec<Entry>,
     pub unfiled: usize,
     pub inbox: usize,
@@ -84,6 +86,10 @@ pub fn build(store: &mut Store, caller: &Caller) -> Result<Brief> {
         ..Default::default()
     })?;
     let Some(project) = resolution.project.clone() else {
+        // An agent is working in a folder without a project: remember it so the human is told (TUI, hooks).
+        if let Some(agent) = caller.agent.as_deref().filter(|a| *a != "human") {
+            store.note_unlinked(&caller.cwd, agent)?;
+        }
         return Ok(Brief {
             resolution,
             session,
@@ -98,6 +104,7 @@ pub fn build(store: &mut Store, caller: &Caller) -> Result<Brief> {
             decisions: vec![],
             ruled_out: vec![],
             ideas: vec![],
+            suggested: Some(store.suggested_project(&caller.cwd)?),
             recent: vec![],
             unfiled: 0,
             inbox,
@@ -258,6 +265,7 @@ pub fn build(store: &mut Store, caller: &Caller) -> Result<Brief> {
         decisions,
         ruled_out,
         ideas,
+        suggested: None,
         recent,
         unfiled,
         inbox,
@@ -358,7 +366,7 @@ pub fn render(b: &Brief, budget_tokens: usize) -> String {
     let branch = res.git.as_ref().and_then(|g| g.branch.clone());
 
     let Some(p) = &res.project else {
-        w.line("# t9: this directory is not linked to a project");
+        w.line("# t9: this folder is not linked to a t9 project yet");
         let mut where_ = format!("cwd {cwd}");
         if let Some(g) = &res.git {
             if let Some(r) = &g.remote {
@@ -376,11 +384,16 @@ pub fn render(b: &Brief, budget_tokens: usize) -> String {
                 w.line(&format!("- {} ({}): {} — {}", s.name, s.key, s.reason, roots));
             }
         }
-        w.line("\n## What to do");
-        w.line("Ask the user which project this work belongs to, then run one of:");
-        w.line("- `t9 project link KEY` — this directory is part of an existing project");
-        w.line("- `t9 project init --name \"Name\"` — start a new project here");
-        w.line("Until then `t9 log` still works; entries go to the inbox for triage.");
+        w.line("\n## Tell the user in your first reply");
+        w.line("This folder is not linked to a t9 project, so nothing recorded here is filed under a project.");
+        w.line(
+            "Ask whether to create one (they may choose another name or key), or to link an existing one, then run:",
+        );
+        if let Some((name, key)) = &b.suggested {
+            w.line(&format!("- `{}` — new project", crate::unlinked::init_command(name, key)));
+        }
+        w.line("- `t9 project link KEY` — this folder belongs to an existing project");
+        w.line("Until then `t9 log` still works: notes go to the inbox and move into the project once it exists.");
         w.section(
             "Rules for every project (global)",
             b.global_rules.iter().take(6).map(decision_with_why),
