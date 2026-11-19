@@ -1,0 +1,25 @@
+[package]
+name = "t9-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "Core library of t9: the Markdown vault, SQLite index, brief and decision log"
+keywords = ["agents", "memory", "markdown", "sqlite"]
+categories = ["development-tools"]
+readme = "../../README.md"
+
+[dependencies]
+chrono = { version = "0.4.45", features = ["serde"] }
+libc = "0.2.191"
+rusqlite = { version = "0.41.1", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+serde_norway = "0.9.42"
+thiserror = "2.0.21"
+toml = "1.2.1"
+ulid = "3.0.0"
+
+[dev-dependencies]
+tempfile = "3.27.0"

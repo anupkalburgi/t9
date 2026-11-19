@@ -1,0 +1,20 @@
+[package]
+name = "t9-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "Terminal UI for t9"
+keywords = ["tui", "agents", "memory"]
+categories = ["command-line-utilities"]
+readme = "../../README.md"
+
+[dependencies]
+anyhow = "1.0.104"
+chrono = "0.4.45"
+ratatui = "0.30.2"
+t9-core = { version = "0.1.0", path = "../t9-core" }
+
+[dev-dependencies]
+tempfile = "3.27.0"

@@ -1,0 +1,17 @@
+[workspace]
+resolver = "3"
+members = ["crates/t9-core", "crates/t9", "crates/t9-tui"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+repository = "https://github.com/anupkalburgi/t9"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = 3

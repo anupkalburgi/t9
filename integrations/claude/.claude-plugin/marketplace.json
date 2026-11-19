@@ -1,0 +1,14 @@
+{
+  "name": "t9",
+  "description": "t9: shared project memory for coding agents",
+  "owner": {
+    "name": "t9"
+  },
+  "plugins": [
+    {
+      "name": "t9",
+      "description": "Project brief at session start and the t9 skill for recording plans, bugs, revisits, decisions and handoffs.",
+      "source": "./t9"
+    }
+  ]
+}

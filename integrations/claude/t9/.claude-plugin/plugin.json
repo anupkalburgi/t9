@@ -1,0 +1,15 @@
+{
+  "name": "t9",
+  "version": "0.2.0",
+  "description": "Shared, persistent project memory for coding agents: the t9 project brief at session start and after compaction, earlier decisions recalled when the user raises their topic, and a skill for recording plans, bugs, ideas, decisions, rejections and handoffs with the t9 CLI.",
+  "author": {
+    "name": "t9"
+  },
+  "keywords": [
+    "memory",
+    "planning",
+    "handoff",
+    "context"
+  ],
+  "license": "MIT"
+}
