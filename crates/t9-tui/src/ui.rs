@@ -467,14 +467,51 @@ fn header(title: &str, count: Option<usize>, color: Color, note: &str) -> Line<'
     Line::from(spans)
 }
 
-/// `BIL-22  bug       active   p0  Title…   extra`, fitted to `width`.
-fn row(i: &Item, width: usize, show_status: bool, extra: &str) -> Line<'static> {
+/// A two-cell marker for how recently something changed: ● bright green (15 min), ● green (1 h),
+/// • yellow (24 h), · grey (7 days), blank (older).
+fn recency(t: &Timestamp) -> Span<'static> {
+    let mins = (now() - *t).num_minutes();
+    match mins {
+        ..15 => Span::styled("● ", Style::new().fg(Color::LightGreen).add_modifier(Modifier::BOLD)),
+        15..60 => Span::styled("● ", Style::new().fg(Color::Green)),
+        60..1440 => Span::styled("• ", Style::new().fg(Color::Yellow)),
+        1440..10080 => Span::styled("· ", Style::new().fg(Color::DarkGray)),
+        _ => Span::raw("  "),
+    }
+}
+
+/// The legend for [`recency`] markers.
+fn recency_legend() -> Line<'static> {
+    let dim = Style::new().fg(Color::DarkGray);
+    Line::from(vec![
+        Span::styled("● ", Style::new().fg(Color::LightGreen).add_modifier(Modifier::BOLD)),
+        Span::styled("15 min  ", dim),
+        Span::styled("● ", Style::new().fg(Color::Green)),
+        Span::styled("1 hour  ", dim),
+        Span::styled("• ", Style::new().fg(Color::Yellow)),
+        Span::styled("today  ", dim),
+        Span::styled("· ", dim),
+        Span::styled("this week  ", dim),
+        Span::styled(" NEW ", Style::new().bg(Color::LightGreen).fg(Color::Black).add_modifier(Modifier::BOLD)),
+        Span::styled(" most recent", dim),
+    ])
+}
+
+fn new_tag() -> Span<'static> {
+    Span::styled(" NEW ", Style::new().bg(Color::LightGreen).fg(Color::Black).add_modifier(Modifier::BOLD))
+}
+
+/// `● BIL-22  bug       active   p0  Title…   extra`, fitted to `width`. The dot shows how recently the item
+/// changed; the most recent item gets a NEW tag.
+fn row(app: &App, i: &Item, width: usize, show_status: bool, extra: &str) -> Line<'static> {
     let m = &i.meta;
+    let is_new = app.newest.as_deref() == Some(m.id.as_str());
     let mut spans = vec![
-        Span::styled(format!("{:<8}", m.id), Style::new().fg(Color::DarkGray)),
+        recency(&app.touched_at(i)),
+        Span::styled(format!("{:<8}", m.id), Style::new().fg(if is_new { Color::LightGreen } else { Color::DarkGray })),
         Span::styled(format!("{:<9}", m.kind.as_str()), kind_style(m.kind)),
     ];
-    let mut used = 17;
+    let mut used = 19 + if is_new { 6 } else { 0 };
     if show_status {
         spans.push(Span::styled(format!("{:<9}", m.status.as_str()), status_style(m.status)));
         used += 9;
@@ -487,6 +524,10 @@ fn row(i: &Item, width: usize, show_status: bool, extra: &str) -> Line<'static> 
     let title = fit(&m.title, title_w);
     let gap = title_w.saturating_sub(title.chars().count());
     spans.push(Span::raw(title));
+    if is_new {
+        spans.push(Span::raw(" "));
+        spans.push(new_tag());
+    }
     if !extra.is_empty() {
         spans.push(Span::raw(" ".repeat(gap + 2)));
         spans.push(Span::styled(extra.to_string(), Style::new().fg(Color::DarkGray)));
@@ -494,17 +535,11 @@ fn row(i: &Item, width: usize, show_status: bool, extra: &str) -> Line<'static> 
     Line::from(spans)
 }
 
-/// A row whose id gets a green ● if the item was touched in the last 15 minutes; `extra` gets the age.
+/// A row with the item's age in the right-hand column.
 fn fresh_row(app: &App, i: &Item, width: usize, show_status: bool, extra: &str) -> Line<'static> {
-    let t = app.touched_at(i);
-    let age = ago(&t);
+    let age = ago(&app.touched_at(i));
     let extra = if extra.is_empty() { age } else { format!("{extra} · {age}") };
-    let mut line = row(i, width, show_status, &extra);
-    if (now() - t).num_minutes() < 15 {
-        line.spans[0] =
-            Span::styled(format!("●{:<7}", i.meta.id), Style::new().fg(Color::Green).add_modifier(Modifier::BOLD));
-    }
-    line
+    row(app, i, width, show_status, &extra)
 }
 
 fn more(n: usize) -> Line<'static> {
@@ -547,6 +582,8 @@ fn overview_columns(
     let mut left: Vec<Line<'static>> = vec![];
     let mut right: Vec<Line<'static>> = vec![];
 
+    left.push(recency_legend());
+
     // What changed last, so it is obvious how current this is.
     if let Some(l) = &app.latest {
         let rows = vec![Line::from(vec![
@@ -577,13 +614,13 @@ fn overview_columns(
     // Waiting on you: questions, proposed decisions, blocked work.
     let mut waiting: Vec<Line> = vec![];
     for i in b.issues.iter().filter(|i| i.meta.kind == Kind::Question) {
-        waiting.push(row(i, w, false, ""));
+        waiting.push(row(app, i, w, false, ""));
     }
     for d in app.decisions.iter().filter(|d| d.meta.status == Status::Proposed) {
-        waiting.push(row(d, w, true, "accept or reject: s"));
+        waiting.push(row(app, d, w, true, "accept or reject: s"));
     }
     for i in b.in_progress.iter().filter(|i| i.meta.status == Status::Blocked) {
-        waiting.push(row(i, w, true, ""));
+        waiting.push(row(app, i, w, true, ""));
     }
     section(
         &mut left,
@@ -604,7 +641,7 @@ fn overview_columns(
     }
     if let Some(focus) = &b.focus {
         let agent = b.session.as_ref().map(|s| s.meta.agent.clone()).unwrap_or_default();
-        section(&mut left, header("AGENT FOCUS", None, Color::Green, &agent), vec![row(focus, w, true, "")], 1);
+        section(&mut left, header("AGENT FOCUS", None, Color::Green, &agent), vec![row(app, focus, w, true, "")], 1);
     }
     let working: Vec<Line> = b
         .in_progress
@@ -636,7 +673,7 @@ fn overview_columns(
         .map(|(n, k)| format!("{} {n}", count(*k)))
         .collect::<Vec<_>>()
         .join(" · ");
-    let rows: Vec<Line> = issues.iter().map(|i| row(i, w, false, "")).collect();
+    let rows: Vec<Line> = issues.iter().map(|i| row(app, i, w, false, "")).collect();
     section(col, header("OPEN ISSUES", Some(rows.len()), Color::Yellow, &note), rows, 12);
 
     let exps: Vec<Line> = b.experiments.iter().map(|i| fresh_row(app, i, w, true, "")).collect();
@@ -644,23 +681,23 @@ fn overview_columns(
     let retry: Vec<Line> = b
         .worth_retrying
         .iter()
-        .map(|i| row(i, w, true, &i.meta.retry_when.clone().map(|r| format!("when: {r}")).unwrap_or_default()))
+        .map(|i| row(app, i, w, true, &i.meta.retry_when.clone().map(|r| format!("when: {r}")).unwrap_or_default()))
         .collect();
     section(col, header("WORTH RETRYING", Some(retry.len()), Color::Green, "retry date passed"), retry, 5);
     let next: Vec<Line> = b.next_up.iter().map(|i| fresh_row(app, i, w, false, "")).collect();
     section(col, header("NEXT UP", Some(next.len()), Color::Cyan, "open tasks by priority"), next, 6);
 
-    let mut decs: Vec<Line> = b.applicable.iter().map(|r| row(&r.item, w, true, "applies to focus")).collect();
-    decs.extend(b.decisions.iter().map(|d| row(d, w, false, &ago(&d.meta.updated))));
+    let mut decs: Vec<Line> = b.applicable.iter().map(|r| row(app, &r.item, w, true, "applies to focus")).collect();
+    decs.extend(b.decisions.iter().map(|d| row(app, d, w, false, &ago(&d.meta.updated))));
     section(
         col,
         header("DECISIONS", Some(b.decisions.len() + b.applicable.len()), Color::Cyan, "in force; full log: 3"),
         decs,
         8,
     );
-    let ruled: Vec<Line> = b.ruled_out.iter().map(|d| row(d, w, false, "")).collect();
+    let ruled: Vec<Line> = b.ruled_out.iter().map(|d| row(app, d, w, false, "")).collect();
     section(col, header("RULED OUT", Some(ruled.len()), Color::DarkGray, "do not re-propose"), ruled, 5);
-    let global: Vec<Line> = b.global_rules.iter().map(|d| row(d, w, false, "")).collect();
+    let global: Vec<Line> = b.global_rules.iter().map(|d| row(app, d, w, false, "")).collect();
     section(col, header("RULES FOR EVERY PROJECT", Some(global.len()), Color::Cyan, ""), global, 5);
     let res: Vec<Line> = b
         .resources
@@ -668,11 +705,11 @@ fn overview_columns(
         .map(|r| {
             let t = r.meta.resource_type.clone().unwrap_or_default();
             let loc = r.meta.location.clone().unwrap_or_default();
-            row(r, w, false, &format!("{t} · {loc}"))
+            row(app, r, w, false, &format!("{t} · {loc}"))
         })
         .collect();
     section(col, header("RESOURCES", Some(res.len()), Color::LightBlue, "datasets, models, services …"), res, 8);
-    let ideas: Vec<Line> = b.ideas.iter().map(|i| row(i, w, false, "")).collect();
+    let ideas: Vec<Line> = b.ideas.iter().map(|i| row(app, i, w, false, "")).collect();
     section(col, header("PARKED IDEAS", Some(ideas.len()), Color::Magenta, ""), ideas, 5);
 
     let recent: Vec<Line> = b
@@ -701,7 +738,7 @@ fn overview_columns(
         attention.push(Line::from(format!("{} inbox entries from unlinked directories (tab 5)", b.inbox)));
     }
     for i in &b.stale {
-        attention.push(row(i, w, false, "idle 3+ days"));
+        attention.push(row(app, i, w, false, "idle 3+ days"));
     }
     section(col, header("NEEDS ATTENTION", Some(attention.len()), Color::Yellow, ""), attention, 6);
 
@@ -718,25 +755,34 @@ fn split(area: Rect) -> [Rect; 2] {
     Layout::horizontal([Constraint::Percentage(48), Constraint::Percentage(52)]).areas(area)
 }
 
-fn item_row(depth: usize, i: &Item, width: usize) -> ListItem<'static> {
+fn item_row(app: &App, depth: usize, i: &Item, width: usize) -> ListItem<'static> {
+    let is_new = app.newest.as_deref() == Some(i.meta.id.as_str());
     let mut spans = vec![
+        recency(&app.touched_at(i)),
         Span::raw("  ".repeat(depth)),
-        Span::styled(format!("{:<8}", i.meta.id), Style::new().fg(Color::DarkGray)),
+        Span::styled(
+            format!("{:<8}", i.meta.id),
+            Style::new().fg(if is_new { Color::LightGreen } else { Color::DarkGray }),
+        ),
         Span::styled(format!("{:<9}", i.meta.kind.as_str()), kind_style(i.meta.kind)),
         Span::styled(format!("{:<9}", i.meta.status.as_str()), status_style(i.meta.status)),
     ];
     if let Some(p) = i.meta.priority {
         spans.push(Span::styled(format!("p{p} "), Style::new().fg(Color::Yellow)));
     }
-    let used = 2 * depth + 8 + 9 + 9 + i.meta.priority.map(|_| 3).unwrap_or(0) + 3;
+    let used = 2 + 2 * depth + 8 + 9 + 9 + i.meta.priority.map(|_| 3).unwrap_or(0) + 3 + if is_new { 6 } else { 0 };
     spans.push(Span::raw(fit(&i.meta.title, width.saturating_sub(used))));
+    if is_new {
+        spans.push(Span::raw(" "));
+        spans.push(new_tag());
+    }
     ListItem::new(Line::from(spans))
 }
 
 fn draw_items(f: &mut Frame, app: &mut App, area: Rect) {
     let [left, right] = split(area);
     let w = left.width.saturating_sub(2) as usize;
-    let rows: Vec<ListItem> = app.items.iter().map(|(d, i)| item_row(*d, i, w)).collect();
+    let rows: Vec<ListItem> = app.items.iter().map(|(d, i)| item_row(app, *d, i, w)).collect();
     let title = format!("Items ({}{})", app.items.len(), if app.show_closed { ", incl. closed" } else { "" });
     let mut st = ListState::default().with_selected(if app.items.is_empty() { None } else { Some(app.item_sel) });
     f.render_stateful_widget(
@@ -754,6 +800,7 @@ fn draw_decisions(f: &mut Frame, app: &mut App, area: Rect) {
         .iter()
         .map(|d| {
             let mut spans = vec![
+                recency(&app.touched_at(d)),
                 Span::styled(format!("{:<8}", d.meta.id), Style::new().fg(Color::DarkGray)),
                 Span::styled(format!("{:<11}", d.meta.status.as_str()), status_style(d.meta.status)),
                 Span::raw(fit(
@@ -777,12 +824,17 @@ fn draw_decisions(f: &mut Frame, app: &mut App, area: Rect) {
     draw_detail(f, app, right);
 }
 
-fn entry_row(e: &Entry, show_project: bool) -> ListItem<'static> {
-    let mut spans = vec![];
+fn entry_row(e: &Entry, show_project: bool, width: usize) -> ListItem<'static> {
+    let mut spans = vec![recency(&e.meta.at)];
+    let mut used = 2;
     if show_project {
         spans.push(Span::styled(format!("{:<7}", e.project), Style::new().fg(Color::DarkGray)));
+        used += 7;
     }
-    spans.push(Span::styled(format!("{} ", local_time(&e.meta.at)), Style::new().fg(Color::DarkGray)));
+    // Compact in the list; the detail pane shows the full date, time and zone.
+    let when = e.meta.at.with_timezone(&chrono::Local).format("%b %e %l:%M %p ").to_string();
+    used += when.chars().count() + 14 + 8;
+    spans.push(Span::styled(when, Style::new().fg(Color::DarkGray)));
     let kind_style = match e.meta.kind {
         EntryKind::Handoff => Style::new().fg(Color::Magenta).bold(),
         EntryKind::Decision => Style::new().fg(Color::Cyan),
@@ -796,7 +848,7 @@ fn entry_row(e: &Entry, show_project: bool) -> ListItem<'static> {
         format!("{:<8}", e.meta.item.clone().unwrap_or_else(|| "—".into())),
         Style::new().fg(Color::Blue),
     ));
-    spans.push(Span::raw(first_line(&e.body, 90)));
+    spans.push(Span::raw(fit(&first_line(&e.body, 200), width.saturating_sub(used))));
     ListItem::new(Line::from(spans))
 }
 
@@ -807,7 +859,8 @@ fn draw_entries(f: &mut Frame, app: &mut App, area: Rect, triage: bool) {
     } else {
         (&app.journal, app.j_sel, format!("Journal ({})", app.journal.len()))
     };
-    let rows: Vec<ListItem> = entries.iter().map(|e| entry_row(e, triage)).collect();
+    let w = left.width.saturating_sub(2) as usize;
+    let rows: Vec<ListItem> = entries.iter().map(|e| entry_row(e, triage, w)).collect();
     let mut st = ListState::default().with_selected(if entries.is_empty() { None } else { Some(sel) });
     f.render_stateful_widget(
         List::new(rows).block(panel(&title, true)).highlight_style(Style::new().add_modifier(Modifier::REVERSED)),

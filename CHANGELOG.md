@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4
+
+- TUI: every row shows how recently it changed: ● bright green (15 min), ● green (1 hour), • yellow (today),
+  · grey (this week). The most recently touched item is tagged **NEW**. A legend sits at the top of the
+  Overview. Journal rows use a compact time and fit the pane.
+
 ## 0.1.3
 
 - **Project context:** each project has an About (what it is, goals, architecture, stack, how to run it, key

@@ -197,7 +197,9 @@ mod tests {
             "claude-code handoff: Next: DM-3",
             "live · refreshed",
             "last update just now by claude-code",
-            "●DM-2",
+            "● DM-2",
+            "15 min",
+            " NEW ",
         ] {
             assert!(s.contains(want), "missing {want:?}:\n{s}");
         }
@@ -226,7 +228,7 @@ mod tests {
             assert!(line.chars().count() <= 80);
         }
         let wide = screen_at(&mut f.app, 180, 40);
-        let row = wide.lines().find(|l| l.contains("LATEST")).unwrap();
+        let row = wide.lines().find(|l| l.contains("this week")).unwrap();
         assert!(row.contains("OPEN ISSUES"), "two columns side by side:\n{wide}");
     }
 
@@ -284,7 +286,8 @@ mod tests {
         key(&mut f.app, KeyCode::Char('n'));
         typ(&mut f.app, "looked at the plan");
         key(&mut f.app, KeyCode::Enter);
-        assert!(screen(&mut f.app).contains("looked at the plan"));
+        let s = screen(&mut f.app);
+        assert!(s.contains("looked at the plan"), "{s}");
     }
 
     #[test]

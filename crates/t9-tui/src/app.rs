@@ -144,6 +144,8 @@ pub struct App {
     pub refreshed_at: chrono::DateTime<chrono::Local>,
     /// Newest change in the project: when, who, what.
     pub latest: Option<Latest>,
+    /// The most recently touched item (marked NEW in lists).
+    pub newest: Option<String>,
     /// Latest journal entry time per item id (from the loaded journal).
     pub touched: std::collections::HashMap<String, Timestamp>,
 }
@@ -194,6 +196,7 @@ impl App {
             refreshed_at: chrono::Local::now(),
             latest: None,
             touched: Default::default(),
+            newest: None,
         };
         app.projects = data::projects(&mut app.store)?;
         app.unlinked = data::unlinked(&mut app.store)?;
@@ -276,6 +279,13 @@ impl App {
             }
         }
         self.latest = self.compute_latest();
+        self.newest = self
+            .items
+            .iter()
+            .map(|(_, i)| i)
+            .chain(self.decisions.iter())
+            .max_by_key(|i| self.touched_at(i))
+            .map(|i| i.meta.id.clone());
         self.triage = data::triage(&mut self.store, &key)?;
         self.timeline = data::timeline(&mut self.store, &key)?;
         let find = |id: &Option<String>, ids: Vec<&str>, old: usize| match id {

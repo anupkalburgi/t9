@@ -20,6 +20,10 @@ while it is open. Anything you record from it is attributed to `human` and commi
 | 5 Triage | Entries not filed under an item, plus inbox entries from unlinked directories. `f` files one. |
 | 6 Timeline | The last 60 days, newest first, by day: work started and finished, decisions, experiment outcomes, blockers, findings, handoffs, new plans, experiments and resources. |
 
+**What changed recently?** Every row starts with a dot for how recently it changed: ● bright green within 15
+minutes, ● green within the hour, • yellow today, · grey this week. The most recently touched item is tagged
+**NEW**. A legend is at the top of the Overview.
+
 **How current is it?** The status line at the bottom always shows `● live · refreshed 8:42:07 PM EST · last
 update 3m ago by claude-code`; the dot turns yellow (paused) while a prompt or dialog is open. The Overview starts with
 **LATEST**, the newest change (who, which item, what). Rows under In progress, Plan and Next up show when each
