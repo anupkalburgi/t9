@@ -334,6 +334,37 @@ mod tests {
     }
 
     #[test]
+    fn overview_shows_about_experiments_resources_and_a_timeline_tab() {
+        let mut f = fixture();
+        let caller = f.app.caller();
+        f.app.store.about_set("DM", "what", "A demo of billing.").unwrap();
+        let new = |kind, title: &str| NewItem { kind: Some(kind), title: title.into(), ..Default::default() };
+        f.app.store.add_item(&caller, new(Kind::Experiment, "Batch webhooks")).unwrap();
+        f.app
+            .store
+            .add_item(
+                &caller,
+                NewItem {
+                    resource_type: Some("dataset".into()),
+                    location: Some("s3://demo/orders".into()),
+                    ..new(Kind::Resource, "Orders dataset")
+                },
+            )
+            .unwrap();
+        f.app.reload().unwrap();
+        let s = screen(&mut f.app);
+        for want in
+            ["ABOUT", "A demo of billing.", "EXPERIMENTS", "Batch webhooks", "RESOURCES", "dataset · s3://demo/orders"]
+        {
+            assert!(s.contains(want), "missing {want:?}:\n{s}");
+        }
+        key(&mut f.app, KeyCode::Char('6'));
+        assert_eq!(f.app.tab, Tab::Timeline);
+        let s = screen(&mut f.app);
+        assert!(s.contains("6 Timeline") && s.contains("new experiment") && s.contains("new resource"), "{s}");
+    }
+
+    #[test]
     fn project_list_help_edit_and_quit() {
         let mut f = fixture();
         key(&mut f.app, KeyCode::Esc);

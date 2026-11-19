@@ -1,6 +1,6 @@
 ---
 name: t9
-description: Shared, persistent project memory through the `t9` CLI, including the project's decision log. Use throughout any coding session where a t9 brief appeared at session start, whenever the user makes or rejects a choice (architecture, testing, tooling, product, process), before proposing an approach or asking the user to choose between options, and whenever the work involves the plan, phases, features, tasks, bugs, regressions, things to revisit, ideas, open questions, progress notes, or handing off to a later session. Record these with t9 instead of only in chat; run `t9 context` when resuming work.
+description: Shared, persistent project memory through the `t9` CLI: the project's About, decision log, experiments, resources (datasets, models, services …) and history. Use throughout any coding session where a t9 brief appeared at session start, whenever the user makes or rejects a choice (architecture, testing, tooling, product, process), before proposing an approach or asking the user to choose between options, and whenever the work involves the plan, phases, features, tasks, bugs, regressions, things to revisit, ideas, open questions, progress notes, or handing off to a later session. Record these with t9 instead of only in chat; run `t9 context` when resuming work.
 ---
 
 # t9: project memory that outlives the conversation
@@ -20,6 +20,48 @@ interface you use.
   before other work: offer the suggested `t9 project init --name "…" --key …` from the brief (they may pick another
   name or key), or `t9 project link KEY` for a similar existing project it lists. Run it once they agree. Do not
   create or link a project without asking, and do not stay silent about it.
+
+## Project context: About and resources
+
+- If the brief says **About (not written yet)**, draft it from the repository (README, AGENTS.md, manifests such
+  as Cargo.toml, package.json or pyproject.toml), show the user, and record it once they agree:
+  `t9 about set what "…"`, then `t9 about add "…" --section stack|run|architecture|data|terms|constraints|links`.
+- When you learn a durable fact about the project (how to run something, a constraint, a term), add it:
+  `t9 about add "integration tests need Docker running" --section run`.
+- When you work with a **resource**, record it once: datasets, tables, pipelines, dashboards, notebooks, models,
+  endpoints, prompts, evals, indexes, features, services, APIs, databases, queues, buckets, environments.
+  `t9 add resource "Invoices table" --type table --at analytics.billing.invoices --owner data-eng -b "one row per
+  invoice; refreshed hourly; amounts in cents"`. Check `t9 resources` first.
+- **Never record credentials.** Record where they are kept ("in 1Password: billing/prod-db", "env var
+  DB_PASSWORD"). t9 refuses text that looks like a secret.
+
+## History: consult it before planning
+
+Before planning any non-trivial approach, and whenever the user asks "should we…", "why don't we…", "what about…":
+
+```sh
+t9 history "webhook batching"      # everything on the topic, oldest first
+t9 timeline --days 14              # what happened recently, and in what order
+```
+
+Build the plan from what comes back, and cite ids:
+- follow accepted decisions; don't re-propose rejected options without new information;
+- don't repeat a **failed experiment** unless what made it fail has changed (its `retry when` condition, or a
+  passed retry date flagged as "worth retrying"); if it has, say so and propose the retry;
+- look for **ideas** that can be combined with what is known now;
+- mention dead ends the user may have forgotten.
+
+## Experiments
+
+When trying something whose outcome is uncertain (a performance change, a model, a prompt, a library, a schema):
+
+```sh
+t9 add experiment "Batch webhooks in groups of 50" --hypothesis "fewer 429 errors" --focus
+t9 log -k finding "provider rejects batches above 10" -r runs/2026-11-18-batch/
+t9 done BIL-12 -n "429s down 80%"                                       # it worked
+t9 status BIL-12 failed -n "batch cap is 10" --retry-when "provider raises the cap" --retry-after 90d
+t9 status BIL-12 inconclusive -n "sandbox too small to tell" --retry-when "staging data available"
+```
 
 ## Decisions: the most important part
 
@@ -56,7 +98,7 @@ Write a few entries per hour of work, not one per tool call. One or two sentence
 
 | When | Command |
 |---|---|
-| Starting a unit of work | `t9 focus BIL-12` (prints the decisions that apply), or `t9 add task "…" --parent BIL-3 --focus` |
+| Starting a unit of work | `t9 focus BIL-12` (prints the decisions, experiments and resources that apply), or `t9 add task "…" --parent BIL-3 --focus` |
 | A meaningful step, result or finding | `t9 log "…"` (attaches to the focus; `-r path` for files, commits, run folders) |
 | You find a bug | `t9 add bug "…" [-l regression-of:BIL-9] [-p 1]` |
 | Something worked before and broke | `t9 add regression "…" -l regression-of:BIL-9` |
@@ -86,6 +128,7 @@ Structure big work as a tree with `--parent`: plan → phase → feature → tas
 
 - `t9 context` — the brief; `t9 ls --tree` — open items as a tree (`--all` includes closed)
 - `t9 decisions [--area A] [--global] [--md]` — the decision log; `t9 check "…"` — decided before?
+- `t9 history "…"` — everything on a topic; `t9 timeline` — what happened when; `t9 about`; `t9 resources`
 - `t9 show BIL-12` — an item with its children, links and journal
 - `t9 journal -n 20` — recent entries; `t9 search "…"` — full-text search (`-A` for all projects)
 - `t9 triage` — entries not filed under an item; `t9 attach ENTRY BIL-12` files one

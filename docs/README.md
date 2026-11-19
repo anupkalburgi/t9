@@ -9,6 +9,8 @@
 - [agents.md](getting-started/agents.md): the protocol a coding agent follows: what to read at the start of a
   session, what to record while working, and how to hand off.
 - [tui.md](getting-started/tui.md): `t9 tui`, and other ways to view the vault (Obsidian, editors, git history).
+- [context-and-history.md](getting-started/context-and-history.md): the project's About, resources (datasets,
+  models, services …), experiments with outcomes and retry conditions, `t9 history` and `t9 timeline`.
 - [decisions.md](getting-started/decisions.md): the decision log: recording decisions, rejections and ideas, and
   how they are recalled in later sessions.
 - [cli-reference.md](getting-started/cli-reference.md): every command and option.

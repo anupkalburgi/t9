@@ -18,9 +18,11 @@ Other environment variables: `T9_VAULT` (vault, default `~/.t9`), `T9_HOME` (sta
 
 Values:
 
-- **Kinds:** `plan`, `phase`, `feature`, `task`, `bug`, `regression`, `revisit`, `decision`, `question`, `idea`, `note`.
+- **Kinds:** `plan`, `phase`, `feature`, `task`, `bug`, `regression`, `revisit`, `decision`, `question`, `idea`,
+  `experiment`, `resource`, `note`.
   Aliases: `milestone`, `feat`, `todo`, `reg`.
-- **Statuses:** `open`, `active`, `blocked`, `done`, `dropped`, `proposed`, `accepted`, `rejected`, `superseded`.
+- **Statuses:** `open`, `active`, `blocked`, `done`, `dropped`, `proposed`, `accepted`, `rejected`, `superseded`,
+  `failed`, `inconclusive`. `succeeded` is an alias of `done`.
   Aliases: `wip`, `doing`, `in-progress`, `closed`, `fixed`, `wontfix`, `cancelled`.
 - **Entry kinds:** `progress`, `note`, `blocker`, `finding`, `handoff`, `decision`, `status-change`.
 - **Links** are written `rel:ID`, where rel is one of `blocks`, `blocked-by`, `relates`, `regression-of`,
@@ -37,6 +39,10 @@ Values:
 | `t9 journal` | `-i ID` · `--of-session ID` · `-k KIND`… · `--days N` · `-n N` (default 30) · `-A` (alias: `timeline`) |
 | `t9 search WORDS…` | `-A` · `-n N` (default 20). Every word must match, as a prefix. |
 | `t9 triage` | `--days N` (default 14) |
+| `t9 about` | The project's About. `about add TEXT --section S`, `about set S TEXT` (`-` reads stdin), `about confirm`, `about edit`. Sections: what, goals, non-goals, architecture, stack, run, data, terms, constraints, links |
+| `t9 history TOPIC…` | Everything recorded about a topic, oldest first · `-A` all projects |
+| `t9 timeline` | Key events, newest first, by day · `--days N` (default 30) · `--topic T` · `-n N` |
+| `t9 resources` | Resources of this project · `--type T` · `-a` include dropped |
 | `t9 check WORDS…` | `-n N` (default 10). Decisions, rejections and ideas of any status matching any word, in this project and the global log |
 | `t9 decisions` | `--area A`… · `-a/--all` (include superseded) · `-g/--global` · `--md` (ADR-style document) |
 | `t9 tui` | Terminal UI (opens on this directory's project); see [tui.md](tui.md) |
@@ -48,12 +54,12 @@ Values:
 
 | Command | Options |
 |---|---|
-| `t9 add KIND TITLE…` | `--parent ID` · `--area A`… · `-b/--body TEXT` · `-t/--tag T`… · `-p/--priority 0-9` · `-s/--status S` · `-l/--link rel:ID`… · `-f/--focus` |
+| `t9 add KIND TITLE…` | `--parent ID` · `--area A`… · experiments: `--hypothesis H` `--retry-when C` `--retry-after DATE` · resources: `--type T` `--at LOCATION` `--owner O` · `-b/--body TEXT` · `-t/--tag T`… · `-p/--priority 0-9` · `-s/--status S` · `-l/--link rel:ID`… · `-f/--focus` |
 | `t9 log MESSAGE…` | `-k/--kind K` (default progress) · `-i/--item ID` (default: the focus) · `-r/--ref PATH`… |
 | `t9 focus ID` | `--no-activate` (don't move `open` to `active`) · `--clear` |
-| `t9 status ID STATUS` | `-n/--note TEXT` |
+| `t9 status ID STATUS` | `-n/--note TEXT` · `--retry-when C` · `--retry-after DATE` (a date, `30d`/`6w`/`3m`, or `none`) |
 | `t9 done ID` | `-n/--note TEXT` |
-| `t9 update ID` | `--area A`… · `--title` · `--status` · `--parent ID\|none` · `-p 0-9\|none` · `-t TAG`… · `--untag TAG`… · `-l rel:ID`… · `-b BODY` · `--rev N` (fail on conflict) · `-n NOTE` |
+| `t9 update ID` | `--area A`… · `--hypothesis` `--retry-when` `--retry-after` `--type` `--at` `--owner` · `--title` · `--status` · `--parent ID\|none` · `-p 0-9\|none` · `-t TAG`… · `--untag TAG`… · `-l rel:ID`… · `-b BODY` · `--rev N` (fail on conflict) · `-n NOTE` |
 | `t9 decide TITLE…` | `-w/--because WHY` · `-r/--rejected "option: why not"`… · `--area A`… · `--for ID`… (applies to that item and below) · `-s/--supersedes ID`… · `--proposed` · `-g/--global` · `-b/--body NOTES` · `--parent ID` |
 | `t9 reject TITLE…` | The same options as `decide` (except `-s`, `--proposed`); records a `rejected` decision |
 | `t9 handoff MESSAGE…` | |

@@ -431,7 +431,7 @@ fn decisions_are_recorded_and_recalled_by_scope_area_and_topic() {
 
     let brief = s.ok(&repo, &["--agent", "claude-code", "context"]);
     for want in [
-        "## Decisions that apply to your focus\n- BIL-6",
+        "## From history: applies to your focus (decisions, experiments, resources)\n- BIL-6",
         "## Rules for every project (global)\n- GLOBAL-1 [accepted]",
         "Always use uv for Python — one tool for envs",
         "## Current decisions\n- BIL-7",
@@ -520,4 +520,107 @@ fn an_unlinked_folder_is_surfaced_to_the_human_until_set_up() {
     assert!(!s.ok(&s.root, &["project", "ls"]).contains("Not set up yet"));
     let brief = hook("session-start", serde_json::json!({"source": "startup", "session_id": "s2"}));
     assert!(brief.contains("# billing-service (BS)"), "{brief}");
+}
+
+#[test]
+fn project_context_experiments_resources_history_and_timeline() {
+    let s = Sandbox::new();
+    let repo = s.repo("billing", "git@github.com:acme/billing.git");
+    s.ok(&repo, &["project", "init", "--name", "Billing Service", "--key", "BIL"]);
+
+    // About: sections, aliases, refusal of credentials, and a compact form in the brief.
+    s.ok(&repo, &["about", "set", "what", "Charges customers and sends invoices."]);
+    s.ok(&repo, &["about", "add", "Rust and Postgres", "--section", "tech"]);
+    let about = s.json(&repo, &["about", "add", "cargo test", "--section", "run"]);
+    let keys: Vec<&str> = about["sections"].as_array().unwrap().iter().map(|x| x["key"].as_str().unwrap()).collect();
+    assert_eq!(keys, ["what", "stack", "run"]);
+    assert!(!about["reviewed"].is_null());
+    assert!(s.err(&repo, &["about", "add", "db password=EXAMPLE", "--section", "run"]).contains("credentials"));
+    assert!(s.err(&repo, &["about", "add", "x", "--section", "nope"]).contains("unknown section"));
+    let brief = s.ok(&repo, &["context"]);
+    assert!(
+        brief.contains("- What it is: Charges customers") && brief.contains("- Stack: Rust and Postgres"),
+        "{brief}"
+    );
+
+    // Resources: typed, located, owned; never credentials.
+    let r = s.json(
+        &repo,
+        &[
+            "add",
+            "resource",
+            "Invoices table",
+            "--type",
+            "Table",
+            "--at",
+            "analytics.billing.invoices",
+            "--owner",
+            "data-eng",
+        ],
+    );
+    assert_eq!(
+        (r["resource_type"].as_str(), r["location"].as_str()),
+        (Some("table"), Some("analytics.billing.invoices"))
+    );
+    assert!(s.err(&repo, &["add", "resource", "Prod DB", "--at", "prod db, password=EXAMPLE"]).contains("credentials"));
+    assert_eq!(s.json(&repo, &["resources", "--type", "table"]).as_array().unwrap().len(), 1);
+    assert!(s.ok(&repo, &["context"]).contains("BIL-1 Invoices table [table] @ analytics.billing.invoices"));
+
+    // An idea, an experiment that fails with a retry condition, and the decision that followed.
+    s.ok(&repo, &["add", "idea", "Batch webhooks to cut API calls"]); // BIL-2
+    s.ok(&repo, &["add", "experiment", "Batch webhooks in groups of 50", "--hypothesis", "fewer 429 errors"]); // BIL-3
+    s.ok(&repo, &["log", "-i", "BIL-3", "-k", "finding", "provider rejects webhook batches above 10"]);
+    let x = s.json(
+        &repo,
+        &[
+            "status",
+            "BIL-3",
+            "failed",
+            "-n",
+            "batch cap 10",
+            "--retry-when",
+            "provider raises the batch limit",
+            "--retry-after",
+            "2020-01-01",
+        ],
+    );
+    assert_eq!((x["status"].as_str(), x["retry_after"].as_str()), (Some("failed"), Some("2020-01-01")));
+    s.ok(&repo, &["decide", "Send webhooks one at a time", "--because", "batches above 10 are rejected"]); // BIL-4
+    let brief = s.ok(&repo, &["context"]);
+    assert!(brief.contains("## Worth retrying") && brief.contains("BIL-3 experiment [failed]"), "{brief}");
+
+    // History: the whole story, in order, each thing once, with the retry flag.
+    let h = s.json(&repo, &["history", "webhook", "batching"]);
+    let ids: Vec<String> = h
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| format!("{}:{}", e["kind"].as_str().unwrap(), e["item"].as_str().or(e["id"].as_str()).unwrap()))
+        .collect();
+    let pos = |k: &str| ids.iter().position(|x| x == k).unwrap_or_else(|| panic!("{k} missing from {ids:?}"));
+    assert!(pos("idea:BIL-2") < pos("experiment:BIL-3") && pos("experiment:BIL-3") < pos("finding:BIL-3"), "{ids:?}");
+    assert_eq!(ids.iter().filter(|x| x.ends_with("BIL-4")).count(), 1, "the decision appears once: {ids:?}");
+    let exp = h.as_array().unwrap().iter().find(|e| e["id"] == "BIL-3").unwrap();
+    assert!(exp["flag"].as_str().unwrap().contains("has passed"), "{exp}");
+
+    // Timeline: newest first, with outcomes and new items; a topic narrows it.
+    let t = s.json(&repo, &["timeline"]);
+    let kinds: Vec<&str> = t.as_array().unwrap().iter().map(|e| e["kind"].as_str().unwrap()).collect();
+    assert!(
+        kinds.contains(&"new experiment") && kinds.contains(&"status-change") && kinds.contains(&"decision"),
+        "{kinds:?}"
+    );
+    let topical = s.json(&repo, &["timeline", "--topic", "invoices table"]);
+    assert!(topical.as_array().unwrap().iter().all(|e| e["title"].as_str().unwrap().contains("Invoices")), "{topical}");
+    assert!(s.ok(&repo, &["timeline"]).contains("new resource"));
+
+    // The message hook brings the failed experiment back when the topic comes up.
+    let payload =
+        serde_json::json!({"session_id": "s1", "cwd": repo, "prompt": "should we batch the webhooks?"}).to_string();
+    let out = s.cmd(&s.root).args(["hook", "claude", "prompt"]).write_stdin(payload).output().unwrap();
+    let out = String::from_utf8(out.stdout).unwrap();
+    assert!(out.contains("BIL-3 experiment [failed]") && out.contains("t9 history"), "{out}");
+
+    // Clearing a retry date.
+    assert!(s.json(&repo, &["update", "BIL-3", "--retry-after", "none"])["retry_after"].is_null());
 }

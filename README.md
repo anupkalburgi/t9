@@ -9,6 +9,9 @@ from facts instead of a reconstruction.
   section.
 - **A decision log that comes back when it matters.** Choices, rejected options and changes of mind are recorded
   with their reasons, and resurface in later sessions when their topic does.
+- **Context and history.** Each project keeps an About (what it is, stack, how to run it), its resources (datasets,
+  tables, models, endpoints, services), and experiments with their outcomes and when they're worth retrying.
+  `t9 history "topic"` tells the whole story; agents consult it before planning.
 - **Plain Markdown you own.** Everything lives in `~/.t9` as Markdown with YAML front matter, committed to git
   automatically. Readable in any editor or Obsidian.
 - **Fast and small.** One Rust binary, no daemon. Most commands take a few milliseconds and peak memory stays
@@ -51,6 +54,10 @@ t9 add task "Index journal entries" --parent MP-2 --focus
 t9 log "50k entries index in 4 s" -r bench/results.txt
 t9 decide "Use SQLite FTS5 for search" --because "no extra process" -r "tantivy: separate index to sync"
 t9 reject "Run a daemon for all writes" --because "the CLI must work with nothing running"
+t9 about add "SQLite + Rust; tests: cargo test" --section stack
+t9 add resource "Events table" --type table --at analytics.events --owner data-eng
+t9 add experiment "Trigram tokenizer" --hypothesis "better matches on code identifiers"
+t9 history "tokenizer"                         # everything on a topic, oldest first
 t9 handoff "Indexing done; next: ranking"
 t9 context        # the brief an agent reads at session start
 ```
@@ -59,7 +66,8 @@ t9 context        # the brief an agent reads at session start
 
 - [Concepts](docs/getting-started/concepts.md) · [For humans](docs/getting-started/humans.md) ·
   [For agents](docs/getting-started/agents.md) · [Decision log](docs/getting-started/decisions.md) ·
-  [TUI](docs/getting-started/tui.md) · [CLI reference](docs/getting-started/cli-reference.md)
+  [Context and history](docs/getting-started/context-and-history.md) · [TUI](docs/getting-started/tui.md) ·
+  [CLI reference](docs/getting-started/cli-reference.md)
 - [Architecture](docs/design/architecture.md) · [Design rationale](docs/design/design.md) ·
   [Performance](docs/design/performance.md)
 - [Status](docs/project-plan/status.md) · [Roadmap](docs/project-plan/roadmap.md) ·

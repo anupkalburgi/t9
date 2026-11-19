@@ -111,6 +111,11 @@ pub fn triage(store: &mut Store, key: &str) -> Result<Vec<Entry>> {
 }
 
 /// The brief as data (for the Overview) and as the text an agent receives.
+/// Key events of the last 60 days, newest first.
+pub fn timeline(store: &mut Store, key: &str) -> Result<Vec<t9_core::history::Event>> {
+    Ok(store.timeline(key, Some(now() - chrono::Duration::days(60)), None)?)
+}
+
 pub fn brief(store: &mut Store, caller: &Caller) -> Result<(context::Brief, String)> {
     let b = context::build(store, caller)?;
     let text = context::render(&b, 6000);

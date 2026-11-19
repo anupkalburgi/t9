@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.3
+
+- **Project context:** each project has an About (what it is, goals, architecture, stack, how to run it, key
+  terms, constraints, links) in `project.md`, shown at the top of every brief. `t9 about`, `about add`,
+  `about set`, `about edit`, `about confirm`. Agents draft it from the README for new projects.
+- **Resources:** `t9 add resource "…" --type dataset|table|model|endpoint|service|… --at LOCATION --owner O`
+  and `t9 resources`. t9 refuses text that looks like a credential.
+- **Experiments:** `t9 add experiment "…" --hypothesis "…"`; outcomes `done`, `failed`, `inconclusive` with
+  `--retry-when` and `--retry-after`; "Worth retrying" in the brief and the TUI.
+- **History and timeline:** `t9 history "topic"` (everything on a topic, oldest first) and `t9 timeline`
+  (what happened when); a Timeline tab in the TUI. Recall on focus and on each message now includes experiments
+  and resources.
+- The skill and the AGENTS.md section tell agents to consult history before planning.
+
 ## 0.1.2
 
 - Folders where an agent works without a t9 project are no longer silent: the brief tells the agent to raise it

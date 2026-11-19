@@ -50,6 +50,9 @@ does its work and exits. A daemon (`t9 serve`) is planned for the UIs, not for c
 | `index.rs` | SQLite schema, migrations-by-rebuild, row mapping, filters, FTS search. Free functions over `&Connection`, so they work inside transactions. |
 | `store.rs` | `Store`: the API every front end uses. Locking, atomic writes, sync, resolution, sessions, items, journal, attach/adopt. |
 | `context.rs` | Builds the brief (`Brief`) and renders it to a token budget. |
+| `about.rs` | The project's About: sections in the body of `project.md`, parse/render, `about_add`, `about_set`, `about_confirm`. |
+| `history.rs` | `history(topic)` (everything on a topic, oldest first) and `timeline(project, since, topic)`, both as `Event`s. |
+| `unlinked.rs` | Folders where agents worked without a project: suggestions, the registry in `.state/unlinked.json`, once-per-session hints. |
 | `decisions.rs` | The decision log: `decide`/`reject`, ADR-shaped bodies, the GLOBAL project, recall by scope, area and text (`applicable_decisions`, `check`, `prompt_context`), the Markdown export. |
 | `crates/t9-tui` | `t9 tui` (ratatui): `data.rs` is the only module that touches the store (the seam for a future REST backend), `app.rs` holds state and keys, `ui.rs` renders. Refreshes every 2 s; writes as `human` in a session whose cwd is the vault, so agents never pick it up. |
 | `crates/t9/src/main.rs` | clap definitions and dispatch. Builds a `Caller` (cwd, agent, session, project) from flags and env. |
@@ -228,11 +231,14 @@ Agent name: `--agent`/`T9_AGENT`; when unset, `human` if stdin is a terminal, el
 | Plan … x/y done | each open plan: done/total over descendants; open phases/features to depth 2 | 12 lines |
 | Open bugs, regressions, revisits, questions | not closed, not already shown, by priority | 10 |
 | Next up | open tasks not shown, by priority | 8 |
-| Decisions that apply to your focus | `applicable_decisions(focus)` (§9) | 5 |
+| About | the project's About, one line per section | 8 lines |
+| From history: applies to your focus | `applicable_decisions(focus)` (§9): decisions, experiments, resources | 5 |
 | Rules for every project (global) | accepted GLOBAL decisions | 6 |
 | Current decisions | `accepted` decisions not shown above, newest first | 6 |
 | Ruled out | `rejected` decisions and ideas | 5 |
 | Parked ideas | open `idea` items | 5 |
+| Experiments running / Worth retrying | open or active experiments; failed or inconclusive ones whose retry date passed | 5 each |
+| Resources | resources not dropped, by type | 10 |
 | Recent activity | newest entries except handoffs | 8 |
 | Needs attention | unfiled entries (14 days), inbox count, active items idle 3+ days | — |
 

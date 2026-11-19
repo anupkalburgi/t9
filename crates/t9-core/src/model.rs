@@ -76,6 +76,8 @@ string_enum!(
         Decision => "decision" | "decisions",
         Question => "question" | "questions",
         Idea => "idea" | "ideas",
+        Experiment => "experiment" | "experiments" | "exp",
+        Resource => "resource" | "resources" | "res" | "asset",
         Note => "note" | "notes",
     }
 );
@@ -85,12 +87,14 @@ string_enum!(
         Open => "open" | "todo",
         Active => "active" | "doing" | "wip" | "in-progress",
         Blocked => "blocked",
-        Done => "done" | "closed" | "fixed",
+        Done => "done" | "closed" | "fixed" | "succeeded" | "success" | "passed",
         Dropped => "dropped" | "wontfix" | "cancelled",
         Proposed => "proposed",
         Accepted => "accepted",
         Superseded => "superseded",
         Rejected => "rejected",
+        Failed => "failed",
+        Inconclusive => "inconclusive",
     }
 );
 
@@ -119,9 +123,77 @@ impl Kind {
     }
 }
 
+/// Resource types t9 knows; other short names are accepted too.
+pub const RESOURCE_TYPES: &[&str] = &[
+    "dataset",
+    "table",
+    "pipeline",
+    "dashboard",
+    "notebook",
+    "model",
+    "endpoint",
+    "prompt",
+    "eval",
+    "index",
+    "feature",
+    "service",
+    "api",
+    "database",
+    "queue",
+    "bucket",
+    "environment",
+    "repo",
+    "doc",
+    "other",
+];
+
+/// Refuses text that looks like a credential: resources should point at a secret manager, never hold secrets.
+pub fn looks_like_secret(s: &str) -> Option<&'static str> {
+    let l = s.to_ascii_lowercase();
+    let patterns: &[(&str, &str)] = &[
+        ("-----begin", "a private key"),
+        ("password=", "a password"),
+        ("passwd=", "a password"),
+        ("secret=", "a secret"),
+        ("token=", "a token"),
+        ("api_key=", "an API key"),
+        ("apikey=", "an API key"),
+        ("authorization: bearer", "a bearer token"),
+    ];
+    for (p, what) in patterns {
+        if l.contains(p) {
+            return Some(what);
+        }
+    }
+    let words = s.split(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ',');
+    for w in words {
+        let looks = (w.starts_with("AKIA")
+            && w.len() == 20
+            && w[4..].chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()))
+            || ((w.starts_with("ghp_")
+                || w.starts_with("github_pat_")
+                || w.starts_with("sk-")
+                || w.starts_with("xox"))
+                && w.len() >= 20)
+            || (w.starts_with("dapi") && w.len() >= 32 && w[4..].chars().all(|c| c.is_ascii_hexdigit()));
+        if looks {
+            return Some("an access token");
+        }
+    }
+    None
+}
+
 impl Status {
     pub fn is_closed(self) -> bool {
-        matches!(self, Status::Done | Status::Dropped | Status::Superseded | Status::Rejected)
+        matches!(
+            self,
+            Status::Done
+                | Status::Dropped
+                | Status::Superseded
+                | Status::Rejected
+                | Status::Failed
+                | Status::Inconclusive
+        )
     }
 }
 
@@ -165,6 +237,9 @@ pub struct ProjectMeta {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub remotes: Vec<String>,
     pub created: Timestamp,
+    /// When the project's About was last written or confirmed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub about_reviewed: Option<Timestamp>,
     /// Keys a human added that t9 does not know about; preserved on rewrite.
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_norway::Value>,
@@ -198,6 +273,24 @@ pub struct ItemMeta {
     /// Topics such as `architecture`, `testing`, `storage`. Decisions are recalled by area.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub areas: Vec<String>,
+    /// Experiments: what is being tested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hypothesis: Option<String>,
+    /// Experiments: the condition under which a failed or inconclusive one is worth trying again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_when: Option<String>,
+    /// Experiments: the date from which it is worth trying again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_after: Option<chrono::NaiveDate>,
+    /// Resources: dataset, table, model, endpoint, service, api, …
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_type: Option<String>,
+    /// Resources: where it lives (table name, URI, path, URL).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    /// Resources: who owns or maintains it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<Link>,
     pub created: Timestamp,

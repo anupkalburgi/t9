@@ -31,10 +31,12 @@ Anything you want to track. Every item has a **kind**, a **status**, a title, an
 | `question` | Something only a human can answer |
 | `decision` | A choice that was made or an option that was rejected, with the reasons (see [decisions.md](decisions.md)) |
 | `idea` | Something that came up and is parked for later |
+| `experiment` | Something tried whose outcome was uncertain, with a hypothesis, outcome and retry condition |
+| `resource` | A dataset, table, model, endpoint, service, bucket … the project uses, and where it lives |
 | `note` | Reference material that is none of the above |
 
 Status is `open`, `active`, `blocked`, `done` or `dropped`. Decisions use `proposed`, `accepted`, `rejected` and
-`superseded`. `done`, `dropped`, `rejected` and `superseded` count as closed, so `t9 ls` hides them by default.
+`superseded`. Experiments end `done` (it worked), `failed` or `inconclusive`. `done`, `dropped`, `rejected` and `superseded` count as closed, so `t9 ls` hides them by default.
 
 Items can carry **areas**: topics such as `architecture`, `testing` or `storage`. When an item is focused, decisions
 in the same area are recalled.
@@ -57,6 +59,12 @@ Each project has a decision log, and there is a global one for rules that apply 
 
 Decisions come back when they matter: in the brief, when you focus an item, before an agent proposes something
 (`t9 check`), and in Claude Code on every message whose topic matches. See [decisions.md](decisions.md).
+
+## About, history and timeline
+
+Each project has an **About** (what it is, goals, architecture, stack, how to run it, key terms) at the top of
+every brief. **`t9 history "topic"`** gathers everything recorded about a topic, oldest first; **`t9 timeline`**
+shows what happened when. See [context-and-history.md](context-and-history.md).
 
 ## Journal entry
 

@@ -90,6 +90,8 @@ enum Cmd {
         status: Status,
         #[arg(long, short)]
         note: Option<String>,
+        #[command(flatten)]
+        extra: ExtraArgs,
     },
     /// Mark an item done.
     Done {
@@ -156,7 +158,6 @@ enum Cmd {
         entries: usize,
     },
     /// Show journal entries, newest first.
-    #[command(alias = "timeline")]
     Journal {
         #[arg(long, short)]
         item: Option<String>,
@@ -198,6 +199,41 @@ enum Cmd {
     /// Install agent integrations: the Claude Code plugin, or an AGENTS.md section for Codex and others.
     #[command(subcommand)]
     Install(install::InstallCmd),
+    /// The project's About: what it is, goals, architecture, stack, how to build and run it, key terms.
+    About {
+        #[command(subcommand)]
+        cmd: Option<AboutCmd>,
+    },
+    /// Everything recorded about a topic, oldest first: decisions and what they replaced, rejected options,
+    /// experiments and their outcomes, ideas, resources, bugs and the findings behind them.
+    History {
+        #[arg(required = true, num_args = 1..)]
+        topic: Vec<String>,
+        /// Search every project, not just this one.
+        #[arg(long, short = 'A')]
+        all_projects: bool,
+    },
+    /// What happened when: work started and finished, decisions, experiment outcomes, blockers, findings,
+    /// handoffs, new plans, experiments and resources. Newest first, by day.
+    Timeline {
+        /// How far back, in days.
+        #[arg(long, default_value_t = 30)]
+        days: i64,
+        /// Only events about this topic.
+        #[arg(long)]
+        topic: Option<String>,
+        #[arg(long, short = 'n', default_value_t = 200)]
+        limit: usize,
+    },
+    /// Datasets, tables, models, endpoints, services … recorded for this project.
+    Resources {
+        /// Only this type (dataset, model, endpoint, service, …).
+        #[arg(long = "type")]
+        resource_type: Option<String>,
+        /// Include dropped ones.
+        #[arg(long, short)]
+        all: bool,
+    },
     /// Terminal UI: projects, brief, item tree, decision log, journal, triage, search. Opens on this directory's
     /// project.
     Tui,
@@ -207,6 +243,28 @@ enum Cmd {
     /// Entry points for agent harness hooks (read the hook payload from stdin).
     #[command(subcommand, hide = true)]
     Hook(hook::HookCmd),
+}
+
+#[derive(Subcommand)]
+enum AboutCmd {
+    /// Add a fact to a section, as a bullet.
+    Add {
+        #[arg(required = true, num_args = 1..)]
+        text: Vec<String>,
+        /// what, goals, non-goals, architecture, stack, run, data, terms, constraints, links.
+        #[arg(long, short, default_value = "what")]
+        section: String,
+    },
+    /// Replace a section (`-` reads stdin; empty text removes it).
+    Set {
+        section: String,
+        #[arg(num_args = 0..)]
+        text: Vec<String>,
+    },
+    /// Mark the About as reviewed (still accurate).
+    Confirm,
+    /// Open the project's About (project.md) in $EDITOR.
+    Edit,
 }
 
 #[derive(Subcommand)]
@@ -344,11 +402,76 @@ impl DecisionArgs {
     }
 }
 
+/// Fields of experiments and resources (shared by `add`, `update` and `status`).
+#[derive(Args, Default)]
+struct ExtraArgs {
+    /// Experiment: what is being tested.
+    #[arg(long)]
+    hypothesis: Option<String>,
+    /// Experiment: when a failed or inconclusive one is worth trying again (a condition).
+    #[arg(long, value_name = "CONDITION")]
+    retry_when: Option<String>,
+    /// Experiment: from when it is worth trying again: a date (2026-12-01) or a delay (30d, 6w); `none` clears.
+    #[arg(long, value_name = "DATE")]
+    retry_after: Option<String>,
+    /// Resource: dataset, table, pipeline, dashboard, notebook, model, endpoint, prompt, eval, index, feature,
+    /// service, api, database, queue, bucket, environment, repo, doc, other.
+    #[arg(long = "type", value_name = "TYPE")]
+    resource_type: Option<String>,
+    /// Resource: where it lives (table name, URI, path, URL). Never a credential.
+    #[arg(long = "at", value_name = "LOCATION")]
+    location: Option<String>,
+    /// Resource: who owns or maintains it.
+    #[arg(long)]
+    owner: Option<String>,
+}
+
+/// `2026-12-01`, or a delay from today: `30d`, `6w`, `3m`.
+fn parse_date(s: &str) -> Result<chrono::NaiveDate> {
+    let s = s.trim();
+    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        return Ok(d);
+    }
+    let (n, unit) = s.split_at(s.len().saturating_sub(1));
+    let n: i64 = n.parse().with_context(|| format!("'{s}' is not a date (YYYY-MM-DD) or a delay like 30d, 6w, 3m"))?;
+    let days = match unit {
+        "d" => n,
+        "w" => n * 7,
+        "m" => n * 30,
+        _ => bail!("'{s}' is not a date (YYYY-MM-DD) or a delay like 30d, 6w, 3m"),
+    };
+    Ok(chrono::Local::now().date_naive() + chrono::Duration::days(days))
+}
+
+impl ExtraArgs {
+    fn retry_after(&self) -> Result<Option<Option<chrono::NaiveDate>>> {
+        match self.retry_after.as_deref() {
+            None => Ok(None),
+            Some(v) if v.eq_ignore_ascii_case("none") => Ok(Some(None)),
+            Some(v) => Ok(Some(Some(parse_date(v)?))),
+        }
+    }
+    fn patch(self, patch: ItemPatch) -> Result<ItemPatch> {
+        let retry_after = self.retry_after()?;
+        Ok(ItemPatch {
+            hypothesis: self.hypothesis,
+            retry_when: self.retry_when,
+            retry_after,
+            resource_type: self.resource_type,
+            location: self.location,
+            owner: self.owner,
+            ..patch
+        })
+    }
+}
+
 #[derive(Args)]
 struct AddArgs {
     kind: Kind,
     #[arg(required = true, num_args = 1..)]
     title: Vec<String>,
+    #[command(flatten)]
+    extra: ExtraArgs,
     /// Topic, e.g. architecture, testing (repeatable). Decisions in the same area are shown when it is focused.
     #[arg(long)]
     area: Vec<String>,
@@ -375,6 +498,8 @@ struct AddArgs {
 #[derive(Args)]
 struct UpdateArgs {
     id: String,
+    #[command(flatten)]
+    extra: ExtraArgs,
     /// Add an area (repeatable).
     #[arg(long)]
     area: Vec<String>,
@@ -560,7 +685,7 @@ fn run(cli: Cli) -> Result<()> {
                         f.session.short_id()
                     );
                     if !f.decisions.is_empty() {
-                        println!("\ndecisions that apply:");
+                        println!("\nfrom history (decisions, experiments, resources that apply):");
                         print::relevant(f.decisions, "");
                     }
                 }
@@ -576,6 +701,12 @@ fn run(cli: Cli) -> Result<()> {
                 priority: a.priority,
                 tags: a.tag,
                 areas: a.area,
+                retry_after: a.extra.retry_after()?.flatten(),
+                hypothesis: a.extra.hypothesis,
+                retry_when: a.extra.retry_when,
+                resource_type: a.extra.resource_type,
+                location: a.extra.location,
+                owner: a.extra.owner,
                 links: a.link,
                 status: a.status,
             };
@@ -592,12 +723,9 @@ fn run(cli: Cli) -> Result<()> {
             let e = app.store.log(&app.caller, LogInput { kind, body: words(&message)?, item, refs })?;
             emit(json, &e, print::logged)?;
         }
-        Cmd::Status { id, status, note } => {
-            let i = app.store.update_item(
-                &app.caller,
-                &id,
-                ItemPatch { status: Some(status), note, ..Default::default() },
-            )?;
+        Cmd::Status { id, status, note, extra } => {
+            let patch = extra.patch(ItemPatch { status: Some(status), note, ..Default::default() })?;
+            let i = app.store.update_item(&app.caller, &id, patch)?;
             emit(json, &i, |i| println!("{} is now {}", i.meta.id, i.meta.status))?;
         }
         Cmd::Done { id, note } => {
@@ -631,7 +759,9 @@ fn run(cli: Cli) -> Result<()> {
                 body: u.body.as_deref().map(text).transpose()?,
                 expect_rev: u.rev,
                 note: u.note,
+                ..Default::default()
             };
+            let patch = u.extra.patch(patch)?;
             let i = app.store.update_item(&app.caller, &u.id, patch)?;
             emit(json, &i, |i| println!("updated {} (rev {})", i.meta.id, i.meta.rev))?;
         }
@@ -803,6 +933,61 @@ fn run(cli: Cli) -> Result<()> {
         Cmd::Doctor => print::doctor(&mut app.store, json)?,
         Cmd::Hook(h) => hook::run(&mut app.store, &app.caller, h)?,
         Cmd::Install(i) => install::run(&app.store.env, i)?,
+        Cmd::About { cmd } => {
+            let key = app.project_key()?;
+            let about = match cmd {
+                None => app.store.about(&key)?,
+                Some(AboutCmd::Add { text, section }) => app.store.about_add(&key, &section, &words(&text)?)?,
+                Some(AboutCmd::Set { section, text }) => {
+                    let t = if text.is_empty() { String::new() } else { words(&text)? };
+                    app.store.about_set(&key, &section, &t)?
+                }
+                Some(AboutCmd::Confirm) => app.store.about_confirm(&key)?,
+                Some(AboutCmd::Edit) => {
+                    let path = app.store.about(&key)?.path;
+                    let editor =
+                        std::env::var("VISUAL").or_else(|_| std::env::var("EDITOR")).unwrap_or_else(|_| "vi".into());
+                    let status = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(format!("{editor} \"$1\""))
+                        .arg("sh")
+                        .arg(&path)
+                        .status()
+                        .context("starting editor")?;
+                    if !status.success() {
+                        bail!("editor exited with {status}");
+                    }
+                    app.store.wrote.set(true);
+                    app.store.about_confirm(&key)?
+                }
+            };
+            emit(json, &about, print::about)?;
+        }
+        Cmd::History { topic, all_projects } => {
+            let project = app.scope(all_projects)?;
+            let events = app.store.history(&topic.join(" "), project.as_deref())?;
+            emit(json, &events, |e| print::history(e, all_projects))?;
+        }
+        Cmd::Timeline { days, topic, limit } => {
+            let key = app.project_key()?;
+            let mut events = app.store.timeline(&key, Some(now() - chrono::Duration::days(days)), topic.as_deref())?;
+            events.truncate(limit);
+            emit(json, &events, |e| print::timeline(e))?;
+        }
+        Cmd::Resources { resource_type, all } => {
+            let key = app.project_key()?;
+            let mut items = app.store.items(&ItemFilter {
+                project: Some(key),
+                kinds: vec![Kind::Resource],
+                include_closed: all,
+                ..Default::default()
+            })?;
+            if let Some(t) = resource_type {
+                let t = slugify(&t);
+                items.retain(|i| i.meta.resource_type.as_deref() == Some(t.as_str()));
+            }
+            emit(json, &items, |i| print::resources(i))?;
+        }
         Cmd::Vault(_) | Cmd::Tui => unreachable!("handled before the store is opened"),
     }
     if trace {

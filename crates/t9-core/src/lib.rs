@@ -1,12 +1,14 @@
 //! t9 core: model, vault (Markdown files, the source of truth), SQLite index (derived), project
 //! resolution, context brief and search. Front ends (CLI, MCP, REST) are thin layers over [`Store`].
 
+pub mod about;
 pub mod clock;
 pub mod context;
 pub mod decisions;
 pub mod env;
 pub mod frontmatter;
 pub mod git;
+pub mod history;
 pub mod index;
 pub mod journal;
 pub mod model;

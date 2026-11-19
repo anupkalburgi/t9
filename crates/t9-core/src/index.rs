@@ -612,3 +612,20 @@ pub fn search_items(c: &Connection, fts: &str, kinds: &[Kind], projects: &[Strin
     let rows = st.query_map(params_from_iter(args), item_row)?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
+
+/// Ranked full-text candidates among journal entries of the given projects (for `t9 history`).
+pub fn search_entries(c: &Connection, fts: &str, projects: &[String], limit: usize) -> Result<Vec<Entry>> {
+    if fts.is_empty() || projects.is_empty() {
+        return Ok(vec![]);
+    }
+    let sql = format!(
+        "SELECT e.meta, e.project, e.body FROM entries_fts JOIN entries e ON e.rid = entries_fts.rowid
+          WHERE entries_fts MATCH ? AND e.project IN ({}) ORDER BY rank LIMIT {limit}",
+        vec!["?"; projects.len()].join(",")
+    );
+    let mut args: Vec<String> = vec![fts.to_string()];
+    args.extend(projects.iter().cloned());
+    let mut st = c.prepare_cached(&sql)?;
+    let rows = st.query_map(params_from_iter(args), entry_row)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}

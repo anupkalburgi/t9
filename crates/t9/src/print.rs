@@ -236,6 +236,88 @@ pub fn decision_log(items: &[Item]) {
     }
 }
 
+pub fn about(a: &t9_core::about::About) {
+    println!("{} ({}) · About", a.name, a.project);
+    match &a.reviewed {
+        Some(t) => println!("last reviewed {}", t9_core::clock::date_time(t)),
+        None => println!("never reviewed"),
+    }
+    if a.is_empty() {
+        println!("\nNothing written yet. Start with what it is, then the stack and how to run it:");
+        println!("  t9 about set what \"…\"");
+        println!("  t9 about add \"…\" --section stack");
+        println!("  t9 about edit");
+        return;
+    }
+    for s in a.sections.iter().filter(|s| !s.text.trim().is_empty()) {
+        println!("\n## {}\n{}", s.title, s.text.trim_end());
+    }
+}
+
+fn date(t: &Timestamp) -> String {
+    t.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string()
+}
+
+pub fn history(events: &[t9_core::history::Event], show_project: bool) {
+    if events.is_empty() {
+        println!("nothing recorded about this yet");
+        return;
+    }
+    for e in events {
+        let proj = if show_project { format!("{:<6} ", e.project) } else { String::new() };
+        let id = if e.source == "entry" {
+            e.item.clone().map(|i| format!("({i})")).unwrap_or_else(|| "—".into())
+        } else {
+            e.id.clone()
+        };
+        let status = e.status.map(|s| format!("[{s}] ")).unwrap_or_default();
+        let mut line = format!("{proj}{}  {:<13} {:<8} {status}{}", date(&e.at), e.kind, id, first_line(&e.title, 100));
+        if !e.detail.is_empty() {
+            line.push_str(&format!(" — {}", first_line(&e.detail, 120)));
+        }
+        if let Some(f) = &e.flag {
+            line.push_str(&format!("   ← {f}"));
+        }
+        println!("{line}");
+    }
+}
+
+pub fn timeline(events: &[t9_core::history::Event]) {
+    if events.is_empty() {
+        println!("nothing happened in this period");
+        return;
+    }
+    let mut day = String::new();
+    for e in events {
+        let d = e.at.with_timezone(&chrono::Local).format("%a %b %d, %Y").to_string();
+        if d != day {
+            println!("\n{d}");
+            day = d;
+        }
+        let id = if e.source == "entry" { e.item.clone().unwrap_or_default() } else { e.id.clone() };
+        let time = e.at.with_timezone(&chrono::Local).format("%l:%M %p").to_string();
+        println!("  {time}  {:<15} {:<8} {}", e.kind, id, first_line(&e.title, 110));
+    }
+}
+
+pub fn resources(items: &[Item]) {
+    if items.is_empty() {
+        println!(
+            "no resources yet (record one with `t9 add resource \"Orders table\" --type table --at analytics.orders`)"
+        );
+    }
+    for i in items {
+        println!(
+            "{:<8} {:<11} {:<30} {}{}",
+            i.meta.id,
+            i.meta.resource_type.as_deref().unwrap_or("—"),
+            first_line(&i.meta.title, 30),
+            i.meta.location.as_deref().unwrap_or(""),
+            i.meta.owner.as_ref().map(|o| format!("  (owner {o})")).unwrap_or_default()
+        );
+    }
+}
+
 pub fn adopted(n: usize) {
     if n > 0 {
         println!("moved {n} inbox entries written from here into this project (unfiled; see `t9 triage`)");

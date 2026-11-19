@@ -354,7 +354,14 @@ pub fn why(item: &Item) -> String {
         }
         first_plain.get_or_insert(l);
     }
-    first_plain.map(|l| clip(l, 140)).unwrap_or_default()
+    if let Some(l) = first_plain {
+        return clip(l, 140);
+    }
+    match (&item.meta.retry_when, &item.meta.hypothesis) {
+        (Some(w), _) => clip(&format!("retry when: {w}"), 140),
+        (None, Some(h)) => clip(&format!("hypothesis: {h}"), 140),
+        _ => String::new(),
+    }
 }
 
 fn clip(s: &str, n: usize) -> String {
@@ -368,7 +375,16 @@ fn clip(s: &str, n: usize) -> String {
 /// `BIL-12 [accepted] 2026-11-10 Use FTS5 for search, not tantivy (search)`.
 pub fn decision_line(i: &Item) -> String {
     let date = i.meta.created.with_timezone(&Local).format("%Y-%m-%d");
-    let mut s = format!("{} [{}] {date} {}", i.meta.id, i.meta.status, i.meta.title);
+    let kind = match i.meta.kind {
+        Kind::Decision => String::new(),
+        k => format!("{k} "),
+    };
+    let mut s = format!("{} {kind}[{}] {date} {}", i.meta.id, i.meta.status, i.meta.title);
+    if i.meta.kind == Kind::Resource
+        && let Some(l) = &i.meta.location
+    {
+        s.push_str(&format!(" @ {l}"));
+    }
     if !i.meta.areas.is_empty() {
         let _ = write!(s, " ({})", i.meta.areas.join(", "));
     }
@@ -377,7 +393,19 @@ pub fn decision_line(i: &Item) -> String {
 
 // ---------------------------------------------------------------- store operations
 
-const RECALL_KINDS: &[Kind] = &[Kind::Decision, Kind::Idea];
+/// What recall brings back: decisions and rejections, ideas, experiments (with their outcomes) and resources.
+const RECALL_KINDS: &[Kind] = &[Kind::Decision, Kind::Idea, Kind::Experiment, Kind::Resource];
+
+/// Which recalled items are worth surfacing unprompted (focus, brief, message hook).
+fn recallable(i: &Item) -> bool {
+    match i.meta.kind {
+        Kind::Decision => matches!(i.meta.status, Status::Accepted | Status::Proposed | Status::Rejected),
+        Kind::Idea => matches!(i.meta.status, Status::Accepted | Status::Rejected),
+        Kind::Experiment => true,
+        Kind::Resource => !matches!(i.meta.status, Status::Dropped | Status::Done),
+        _ => false,
+    }
+}
 
 impl Store {
     /// The `GLOBAL` project, created on first use (no roots; it never resolves from a directory).
@@ -396,6 +424,7 @@ impl Store {
             roots: vec![],
             remotes: vec![],
             created: now(),
+            about_reviewed: None,
             extra: Default::default(),
         };
         let body = "# Global\n\nDecisions and rules that apply to every project. They appear in every brief.\n";
@@ -520,7 +549,7 @@ impl Store {
         let mut out = vec![];
         for c in candidates {
             let st = c.meta.status;
-            if strict && (st == Status::Superseded || (c.meta.kind == Kind::Idea && st == Status::Open)) {
+            if strict && !recallable(&c) {
                 continue;
             }
             let all = hits(&kws, &tokens(&format!("{} {} {}", c.meta.title, c.meta.areas.join(" "), c.body)));
@@ -574,11 +603,10 @@ impl Store {
             let cands = self.items(&ItemFilter {
                 project: Some(p.clone()),
                 kinds: RECALL_KINDS.to_vec(),
-                statuses: vec![Status::Accepted, Status::Proposed, Status::Rejected],
                 include_closed: true,
                 ..Default::default()
             })?;
-            for c in cands {
+            for c in cands.into_iter().filter(recallable) {
                 if c.meta.id == item.meta.id {
                     continue;
                 }
@@ -635,8 +663,9 @@ pub fn prompt_context(store: &mut Store, caller: &Caller, prompt: &str) -> Resul
     let mut out = String::new();
     if !found.is_empty() {
         out.push_str(
-            "t9: earlier decisions that may bear on this message. Follow them; if the user is changing one, record \
-             that with `t9 decide \"…\" -s ID --because \"…\"`.\n",
+            "t9: from this project's history, possibly relevant to this message. Follow decisions; don't repeat a \
+             failed experiment unless what made it fail has changed; if the user is changing a decision, record \
+             it with `t9 decide \"…\" -s ID --because \"…\"`. For the full story: `t9 history \"topic\"`.\n",
         );
         for f in &found {
             let w = why(&f.item);

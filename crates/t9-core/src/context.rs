@@ -45,6 +45,14 @@ pub struct Brief {
     pub ideas: Vec<Item>,
     /// For an unlinked folder: the suggested project name and key.
     pub suggested: Option<(String, String)>,
+    /// The project's About (what it is, stack, how to run, …).
+    pub about: Vec<crate::about::AboutSection>,
+    /// Experiments in progress.
+    pub experiments: Vec<Item>,
+    /// Failed or inconclusive experiments whose retry date has passed.
+    pub worth_retrying: Vec<Item>,
+    /// Datasets, tables, models, endpoints, services … the project works with.
+    pub resources: Vec<Item>,
     pub recent: Vec<Entry>,
     pub unfiled: usize,
     pub inbox: usize,
@@ -105,6 +113,10 @@ pub fn build(store: &mut Store, caller: &Caller) -> Result<Brief> {
             ruled_out: vec![],
             ideas: vec![],
             suggested: Some(store.suggested_project(&caller.cwd)?),
+            about: vec![],
+            experiments: vec![],
+            worth_retrying: vec![],
+            resources: vec![],
             recent: vec![],
             unfiled: 0,
             inbox,
@@ -221,6 +233,24 @@ pub fn build(store: &mut Store, caller: &Caller) -> Result<Brief> {
     let mut ideas: Vec<Item> =
         all.iter().filter(|i| i.meta.kind == Kind::Idea && i.meta.status == Status::Open).cloned().collect();
     newest(&mut ideas);
+    let experiments: Vec<Item> = all
+        .iter()
+        .filter(|i| i.meta.kind == Kind::Experiment && matches!(i.meta.status, Status::Active | Status::Open))
+        .cloned()
+        .collect();
+    let today = chrono::Local::now().date_naive();
+    let worth_retrying: Vec<Item> = all
+        .iter()
+        .filter(|i| i.meta.kind == Kind::Experiment && matches!(i.meta.status, Status::Failed | Status::Inconclusive))
+        .filter(|i| i.meta.retry_after.is_some_and(|d| d <= today))
+        .cloned()
+        .collect();
+    let mut resources: Vec<Item> = all
+        .iter()
+        .filter(|i| i.meta.kind == Kind::Resource && !matches!(i.meta.status, Status::Dropped | Status::Done))
+        .cloned()
+        .collect();
+    resources.sort_by(|a, b| a.meta.resource_type.cmp(&b.meta.resource_type).then(a.meta.title.cmp(&b.meta.title)));
     let global_rules: Vec<Item> = if key == GLOBAL { vec![] } else { global_rules(store)? }
         .into_iter()
         .filter(|g| !applied.contains(g.meta.id.as_str()))
@@ -266,6 +296,10 @@ pub fn build(store: &mut Store, caller: &Caller) -> Result<Brief> {
         ruled_out,
         ideas,
         suggested: None,
+        about: crate::about::parse(&project.description),
+        experiments,
+        worth_retrying,
+        resources,
         recent,
         unfiled,
         inbox,
@@ -414,17 +448,32 @@ pub fn render(b: &Brief, budget_tokens: usize) -> String {
         let _ = write!(where_, " · session {} ({})", s.short_id(), s.meta.agent);
     }
     w.line(&where_);
-    if !p.description.is_empty() {
-        let desc: String = p
-            .description
-            .lines()
-            .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
-            .take(3)
-            .collect::<Vec<_>>()
-            .join(" ");
-        if !desc.is_empty() {
-            w.line(&first_line(&desc, 300));
-        }
+    // About: what the project is, then one line per other section.
+    let about_lines: Vec<String> = b
+        .about
+        .iter()
+        .filter(|s| !s.text.trim().is_empty())
+        .take(8)
+        .map(|s| {
+            let flat = s
+                .text
+                .lines()
+                .map(|l| l.trim().trim_start_matches("- "))
+                .filter(|l| !l.is_empty())
+                .collect::<Vec<_>>()
+                .join("; ");
+            let max = if s.key == "what" { 400 } else { 220 };
+            format!("- {}: {}", s.title, first_line(&flat, max))
+        })
+        .collect();
+    if about_lines.is_empty() {
+        w.section(
+            "About (not written yet)",
+            ["- Draft it from the repository's README and ask the user to confirm: `t9 about set what \"…\"`, `t9 about add \"…\" --section stack`".to_string()],
+            0,
+        );
+    } else {
+        w.section("About (`t9 about` for all of it)", about_lines, 0);
     }
 
     if let Some(h) = &b.handoff {
@@ -442,7 +491,7 @@ pub fn render(b: &Brief, budget_tokens: usize) -> String {
         w.section("Current focus", lines, 0);
     }
     w.section(
-        "Decisions that apply to your focus",
+        "From history: applies to your focus (decisions, experiments, resources)",
         b.applicable.iter().map(|r| format!("{} [{}]", decision_with_why(&r.item), r.reasons.join("; "))),
         0,
     );
@@ -452,6 +501,16 @@ pub fn render(b: &Brief, budget_tokens: usize) -> String {
         b.global_rules.len().saturating_sub(6),
     );
     w.section("In progress", b.in_progress.iter().take(10).map(item_line), b.in_progress.len().saturating_sub(10));
+    w.section(
+        "Experiments running",
+        b.experiments.iter().take(5).map(decision_with_why),
+        b.experiments.len().saturating_sub(5),
+    );
+    w.section(
+        "Worth retrying (retry date passed; check what made them fail)",
+        b.worth_retrying.iter().take(5).map(decision_with_why),
+        b.worth_retrying.len().saturating_sub(5),
+    );
     for pv in &b.plans {
         let title = format!(
             "Plan {} {} [{}] — {}/{} done",
@@ -492,6 +551,20 @@ pub fn render(b: &Brief, budget_tokens: usize) -> String {
         b.ruled_out.len().saturating_sub(5),
     );
     w.section("Parked ideas", b.ideas.iter().take(5).map(item_line), b.ideas.len().saturating_sub(5));
+    w.section(
+        "Resources (datasets, models, services …)",
+        b.resources.iter().take(10).map(|r| {
+            let mut l = format!("- {} {}", r.meta.id, r.meta.title);
+            if let Some(t) = &r.meta.resource_type {
+                l.push_str(&format!(" [{t}]"));
+            }
+            if let Some(loc) = &r.meta.location {
+                l.push_str(&format!(" @ {loc}"));
+            }
+            l
+        }),
+        b.resources.len().saturating_sub(10),
+    );
     w.section("Recent activity", b.recent.iter().take(8).map(entry_line), 0);
 
     let mut attention = vec![];

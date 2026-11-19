@@ -152,6 +152,10 @@ From the shell:
 | Set a rule for every project | `t9 decide "Always use uv" --global` |
 | Review the decision log | `t9 decisions [--area A] [--md]`; `t9 check "topic"` |
 | Park an idea | `t9 add idea "…"` |
+| Describe the project | `t9 about`, `t9 about edit`, `t9 about add "…" --section stack` |
+| Record a dataset, model, service … | `t9 add resource "…" --type dataset --at s3://… --owner …` |
+| See everything on a topic | `t9 history "topic"` |
+| See what happened when | `t9 timeline --days 30`, or tab 6 in `t9 tui` |
 | Add a thought about existing work | `t9 add revisit "…"` |
 | Tidy up unfiled notes | `t9 triage`, then `t9 attach ENTRY BIL-12` |
 | Fix a typo or rewrite a description | `t9 edit BIL-12` (opens `$EDITOR`) |

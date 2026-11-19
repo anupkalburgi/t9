@@ -25,10 +25,11 @@ pub enum Tab {
     Decisions,
     Journal,
     Triage,
+    Timeline,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 5] = [Tab::Brief, Tab::Items, Tab::Decisions, Tab::Journal, Tab::Triage];
+    pub const ALL: [Tab; 6] = [Tab::Brief, Tab::Items, Tab::Decisions, Tab::Journal, Tab::Triage, Tab::Timeline];
     pub fn title(self) -> &'static str {
         match self {
             Tab::Brief => "1 Overview",
@@ -36,6 +37,7 @@ impl Tab {
             Tab::Decisions => "3 Decisions",
             Tab::Journal => "4 Journal",
             Tab::Triage => "5 Triage",
+            Tab::Timeline => "6 Timeline",
         }
     }
     fn index(self) -> usize {
@@ -116,6 +118,9 @@ pub struct App {
     /// Selection over projects followed by unlinked folders.
     pub proj_sel: usize,
     pub key: Option<String>,
+    /// Key events of the last 60 days, newest first (Timeline tab).
+    pub timeline: Vec<t9_core::history::Event>,
+    pub timeline_scroll: u16,
     /// The agent's brief as text (shown with `b`) and as data (the Overview).
     pub brief: String,
     pub overview: Option<t9_core::context::Brief>,
@@ -166,6 +171,8 @@ impl App {
             unlinked: vec![],
             proj_sel: 0,
             key: None,
+            timeline: vec![],
+            timeline_scroll: 0,
             brief: String::new(),
             overview: None,
             raw_brief: false,
@@ -270,6 +277,7 @@ impl App {
         }
         self.latest = self.compute_latest();
         self.triage = data::triage(&mut self.store, &key)?;
+        self.timeline = data::timeline(&mut self.store, &key)?;
         let find = |id: &Option<String>, ids: Vec<&str>, old: usize| match id {
             Some(id) => ids.iter().position(|x| x == id).unwrap_or(old),
             None => old,
@@ -331,6 +339,7 @@ impl App {
             Tab::Decisions => self.decisions.get(self.dec_sel).map(|i| i.meta.id.clone()),
             Tab::Journal => self.journal.get(self.j_sel).map(|e| e.meta.id.clone()),
             Tab::Triage => self.triage.get(self.t_sel).map(|e| e.meta.id.clone()),
+            Tab::Timeline => None,
         }
     }
 
@@ -416,6 +425,7 @@ impl App {
             (_, Tab::Decisions) => self.dec_sel = step(self.dec_sel, self.decisions.len(), delta),
             (_, Tab::Journal) => self.j_sel = step(self.j_sel, self.journal.len(), delta),
             (_, Tab::Triage) => self.t_sel = step(self.t_sel, self.triage.len(), delta),
+            (_, Tab::Timeline) => self.timeline_scroll = (self.timeline_scroll as isize + delta).max(0) as u16,
         }
         self.load_detail()
     }
@@ -502,9 +512,9 @@ impl App {
                 self.key = None;
                 self.reload()?;
             }
-            KeyCode::Tab => self.set_tab(Tab::ALL[(self.tab.index() + 1) % 5])?,
-            KeyCode::BackTab => self.set_tab(Tab::ALL[(self.tab.index() + 4) % 5])?,
-            KeyCode::Char(c @ '1'..='5') => self.set_tab(Tab::ALL[c as usize - '1' as usize])?,
+            KeyCode::Tab => self.set_tab(Tab::ALL[(self.tab.index() + 1) % Tab::ALL.len()])?,
+            KeyCode::BackTab => self.set_tab(Tab::ALL[(self.tab.index() + Tab::ALL.len() - 1) % Tab::ALL.len()])?,
+            KeyCode::Char(c @ '1'..='6') => self.set_tab(Tab::ALL[c as usize - '1' as usize])?,
             KeyCode::Char('b') if self.tab == Tab::Brief => {
                 self.raw_brief = !self.raw_brief;
                 self.brief_scroll = 0;

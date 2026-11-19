@@ -27,7 +27,21 @@ t9 project link BIL                                   # existing project
 t9 project init --name "Billing Service" --key BIL    # new project
 ```
 
+If the brief says **About (not written yet)**, draft it from the README and manifests, show the user, and record
+it once they agree (`t9 about set what "…"`, `t9 about add "…" --section stack`). See
+[context-and-history.md](context-and-history.md).
+
 ### 2. When you start a unit of work
+
+Before planning anything non-trivial, consult the history and plan from it, citing ids:
+
+```sh
+t9 history "webhook batching"   # decisions, rejected options, experiments and outcomes, ideas, resources
+t9 timeline --days 14
+```
+
+Don't repeat a failed experiment unless what made it fail has changed; retry what has become worth retrying;
+combine old ideas with what is known now.
 
 Look for an existing item before creating one:
 
@@ -62,6 +76,9 @@ Record a few entries per hour of work, not one per tool call:
 | The user changes direction | `t9 decide "Drop the legacy XML export" -s BIL-9 --because "no customer has used it in a year"` |
 | The user states a rule for all projects | `t9 decide "Always use uv for Python" --global` |
 | An idea for later | `t9 add idea "Trigram tokenizer for identifiers" --area search` |
+| You try something uncertain | `t9 add experiment "…" --hypothesis "…" --focus`; then `t9 done ID` or `t9 status ID failed -n "why" --retry-when "…"` |
+| You use a dataset, model, endpoint, service … | `t9 add resource "…" --type table --at analytics.billing.invoices -b "schema, freshness, quirks"` (never credentials) |
+| You learn a durable fact about the project | `t9 about add "…" --section run` |
 | You're blocked | `t9 status BIL-12 blocked -n "waiting for provider sandbox access"` |
 | You're done | `t9 done BIL-12 -n "verified: 200/200 sample invoices match"` |
 

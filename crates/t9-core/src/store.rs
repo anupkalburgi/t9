@@ -86,6 +86,12 @@ pub struct NewItem {
     pub areas: Vec<String>,
     pub links: Vec<Link>,
     pub status: Option<Status>,
+    pub hypothesis: Option<String>,
+    pub retry_when: Option<String>,
+    pub retry_after: Option<chrono::NaiveDate>,
+    pub resource_type: Option<String>,
+    pub location: Option<String>,
+    pub owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -99,6 +105,13 @@ pub struct ItemPatch {
     pub remove_tags: Vec<String>,
     pub add_links: Vec<Link>,
     pub body: Option<String>,
+    /// Experiment and resource fields: `Some("")` clears a field.
+    pub hypothesis: Option<String>,
+    pub retry_when: Option<String>,
+    pub retry_after: Option<Option<chrono::NaiveDate>>,
+    pub resource_type: Option<String>,
+    pub location: Option<String>,
+    pub owner: Option<String>,
     /// Optimistic concurrency: fail if the file's `rev` differs.
     pub expect_rev: Option<u32>,
     /// Reason recorded with a status change.
@@ -268,6 +281,24 @@ pub(crate) fn unique_key(name: &str, existing: &HashSet<String>) -> String {
     k
 }
 
+/// `Some("  ")` → `None`; trims.
+fn clean_opt(v: Option<String>) -> Option<String> {
+    v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// t9 never stores credentials: refuse text that looks like one and say what to do instead.
+fn refuse_secrets<'a>(fields: impl IntoIterator<Item = Option<&'a String>>) -> Result<()> {
+    for f in fields.into_iter().flatten() {
+        if let Some(what) = looks_like_secret(f) {
+            return Err(Error::Invalid(format!(
+                "this looks like it contains {what}; t9 does not store credentials. Record where the secret is kept \
+                 instead (e.g. \"in 1Password: billing/prod-db\" or \"env var DB_PASSWORD\")"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn item_file_name(id: &str, title: &str) -> String {
     let mut slug = slugify(title);
     if slug.len() > 60 {
@@ -314,7 +345,7 @@ impl Store {
         write_atomic(path, content)
     }
 
-    fn lock(&self, key: &str) -> Result<File> {
+    pub(crate) fn lock(&self, key: &str) -> Result<File> {
         let path = self.env.locks_dir().join(format!("{key}.lock"));
         let f =
             OpenOptions::new().create(true).truncate(false).write(true).open(&path).map_err(|e| Error::io(&path, e))?;
@@ -735,6 +766,7 @@ impl Store {
             roots,
             remotes,
             created: now(),
+            about_reviewed: None,
             extra: Default::default(),
         };
         let dir = self.env.projects_dir().join(&slug);
@@ -957,6 +989,7 @@ impl Store {
         if title.is_empty() {
             return Err(Error::Invalid("title is empty".into()));
         }
+        refuse_secrets([Some(&title), Some(&ni.body), ni.location.as_ref(), ni.owner.as_ref()])?;
         let parent = match &ni.parent {
             Some(p) => Some(self.item(p)?),
             None => None,
@@ -996,6 +1029,12 @@ impl Store {
             priority: ni.priority,
             tags: ni.tags,
             areas: normalize_areas(&ni.areas),
+            hypothesis: clean_opt(ni.hypothesis),
+            retry_when: clean_opt(ni.retry_when),
+            retry_after: ni.retry_after,
+            resource_type: clean_opt(ni.resource_type).map(|t| slugify(&t)),
+            location: clean_opt(ni.location),
+            owner: clean_opt(ni.owner),
             links: ni.links,
             created: at,
             updated: at,
@@ -1053,6 +1092,25 @@ impl Store {
             }
             if let Some(p) = patch.priority {
                 meta.priority = p;
+            }
+            refuse_secrets([patch.body.as_ref(), patch.location.as_ref(), Some(&meta.title)])?;
+            if let Some(v) = patch.hypothesis {
+                meta.hypothesis = clean_opt(Some(v));
+            }
+            if let Some(v) = patch.retry_when {
+                meta.retry_when = clean_opt(Some(v));
+            }
+            if let Some(v) = patch.retry_after {
+                meta.retry_after = v;
+            }
+            if let Some(v) = patch.resource_type {
+                meta.resource_type = clean_opt(Some(v)).map(|t| slugify(&t));
+            }
+            if let Some(v) = patch.location {
+                meta.location = clean_opt(Some(v));
+            }
+            if let Some(v) = patch.owner {
+                meta.owner = clean_opt(Some(v));
             }
             for a in normalize_areas(&patch.add_areas) {
                 if !meta.areas.contains(&a) {

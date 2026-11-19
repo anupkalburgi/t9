@@ -18,6 +18,8 @@ fn status_style(s: Status) -> Style {
         Status::Blocked => Style::new().fg(Color::Red),
         Status::Done | Status::Dropped | Status::Superseded => Style::new().fg(Color::DarkGray),
         Status::Rejected => Style::new().fg(Color::Red).add_modifier(Modifier::DIM),
+        Status::Failed => Style::new().fg(Color::Red),
+        Status::Inconclusive => Style::new().fg(Color::Yellow).add_modifier(Modifier::DIM),
         Status::Accepted => Style::new().fg(Color::Cyan),
         Status::Proposed => Style::new().fg(Color::Yellow),
         Status::Open => Style::new(),
@@ -30,6 +32,8 @@ fn kind_style(k: Kind) -> Style {
         Kind::Revisit | Kind::Question => Style::new().fg(Color::Yellow),
         Kind::Decision => Style::new().fg(Color::Cyan),
         Kind::Idea => Style::new().fg(Color::Magenta),
+        Kind::Experiment => Style::new().fg(Color::Green),
+        Kind::Resource => Style::new().fg(Color::LightBlue),
         Kind::Plan | Kind::Phase | Kind::Feature => Style::new().fg(Color::Blue).add_modifier(Modifier::BOLD),
         Kind::Task | Kind::Note => Style::new(),
     }
@@ -56,6 +60,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             Tab::Decisions => draw_decisions(f, app, body),
             Tab::Journal => draw_entries(f, app, body, false),
             Tab::Triage => draw_entries(f, app, body, true),
+            Tab::Timeline => draw_timeline(f, app, body),
         },
     }
     draw_footer(f, app, footer);
@@ -214,6 +219,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         }
         (_, Tab::Journal) => "? help · ↑↓ select · J/K scroll · n note · / search · Esc projects",
         (_, Tab::Triage) => "? help · ↑↓ select · f file under an item · n note · / search",
+        (_, Tab::Timeline) => "? help · ↑↓ scroll · last 60 days, newest first · t9 history \"topic\" for one subject",
     };
     if room > 8 {
         spans.push(Span::styled(format!(" │ {}", fit(hints, room)), Style::new().fg(Color::DarkGray)));
@@ -305,6 +311,48 @@ fn draw_projects(f: &mut Frame, app: &mut App, area: Rect) {
         }
     };
     f.render_widget(Paragraph::new(text).wrap(Wrap { trim: false }).block(panel("Details", false)), right);
+}
+
+fn draw_timeline(f: &mut Frame, app: &App, area: Rect) {
+    let w = area.width.saturating_sub(4) as usize;
+    let mut lines: Vec<Line<'static>> = vec![];
+    let mut day = String::new();
+    for e in &app.timeline {
+        let d = e.at.with_timezone(&chrono::Local).format("%A, %b %-d").to_string();
+        if d != day {
+            if !lines.is_empty() {
+                lines.push(Line::from(""));
+            }
+            lines.push(Line::from(Span::styled(d.clone(), Style::new().fg(Color::Blue).add_modifier(Modifier::BOLD))));
+            day = d;
+        }
+        let time = e.at.with_timezone(&chrono::Local).format("%l:%M %p").to_string();
+        let id = if e.source == "entry" { e.item.clone().unwrap_or_default() } else { e.id.clone() };
+        let style = match e.kind.as_str() {
+            "decision" => Style::new().fg(Color::Cyan),
+            "handoff" => Style::new().fg(Color::Magenta),
+            "blocker" => Style::new().fg(Color::Red),
+            "finding" => Style::new().fg(Color::Green),
+            k if k.starts_with("new ") => Style::new().fg(Color::Yellow),
+            _ => Style::new().fg(Color::DarkGray),
+        };
+        let used = 10 + 16 + 9;
+        lines.push(Line::from(vec![
+            Span::styled(format!("{time}  "), Style::new().fg(Color::DarkGray)),
+            Span::styled(format!("{:<16}", e.kind), style),
+            Span::styled(format!("{id:<9}"), Style::new().fg(Color::DarkGray)),
+            Span::raw(fit(&e.title, w.saturating_sub(used))),
+        ]));
+    }
+    if lines.is_empty() {
+        lines.push(Line::from(Span::styled("Nothing in the last 60 days.", Style::new().fg(Color::DarkGray))));
+    }
+    f.render_widget(
+        Paragraph::new(lines)
+            .scroll((app.timeline_scroll, 0))
+            .block(panel("Timeline: what happened when (last 60 days)", true)),
+        area,
+    );
 }
 
 fn md_lines(body: &str) -> Vec<Line<'static>> {
@@ -509,6 +557,23 @@ fn overview_columns(
         section(&mut left, header("LATEST", None, Color::Green, &when), rows, 1);
     }
 
+    // About: what the project is, in a line or two.
+    if let Some(what) = b.about.iter().find(|s| s.key == "what" && !s.text.trim().is_empty()) {
+        let rows: Vec<Line> =
+            wrap_text(&what.text.replace("\n- ", "; ").replace("- ", ""), w, 3).into_iter().map(Line::from).collect();
+        section(&mut left, header("ABOUT", None, Color::Blue, "t9 about"), rows, 3);
+    } else {
+        section(
+            &mut left,
+            header("ABOUT", None, Color::Blue, ""),
+            vec![Line::from(Span::styled(
+                "Not written yet: t9 about set what \"…\" (agents draft it from the README)",
+                Style::new().fg(Color::DarkGray),
+            ))],
+            1,
+        );
+    }
+
     // Waiting on you: questions, proposed decisions, blocked work.
     let mut waiting: Vec<Line> = vec![];
     for i in b.issues.iter().filter(|i| i.meta.kind == Kind::Question) {
@@ -574,6 +639,14 @@ fn overview_columns(
     let rows: Vec<Line> = issues.iter().map(|i| row(i, w, false, "")).collect();
     section(col, header("OPEN ISSUES", Some(rows.len()), Color::Yellow, &note), rows, 12);
 
+    let exps: Vec<Line> = b.experiments.iter().map(|i| fresh_row(app, i, w, true, "")).collect();
+    section(col, header("EXPERIMENTS", Some(exps.len()), Color::Green, "running"), exps, 6);
+    let retry: Vec<Line> = b
+        .worth_retrying
+        .iter()
+        .map(|i| row(i, w, true, &i.meta.retry_when.clone().map(|r| format!("when: {r}")).unwrap_or_default()))
+        .collect();
+    section(col, header("WORTH RETRYING", Some(retry.len()), Color::Green, "retry date passed"), retry, 5);
     let next: Vec<Line> = b.next_up.iter().map(|i| fresh_row(app, i, w, false, "")).collect();
     section(col, header("NEXT UP", Some(next.len()), Color::Cyan, "open tasks by priority"), next, 6);
 
@@ -589,6 +662,16 @@ fn overview_columns(
     section(col, header("RULED OUT", Some(ruled.len()), Color::DarkGray, "do not re-propose"), ruled, 5);
     let global: Vec<Line> = b.global_rules.iter().map(|d| row(d, w, false, "")).collect();
     section(col, header("RULES FOR EVERY PROJECT", Some(global.len()), Color::Cyan, ""), global, 5);
+    let res: Vec<Line> = b
+        .resources
+        .iter()
+        .map(|r| {
+            let t = r.meta.resource_type.clone().unwrap_or_default();
+            let loc = r.meta.location.clone().unwrap_or_default();
+            row(r, w, false, &format!("{t} · {loc}"))
+        })
+        .collect();
+    section(col, header("RESOURCES", Some(res.len()), Color::LightBlue, "datasets, models, services …"), res, 8);
     let ideas: Vec<Line> = b.ideas.iter().map(|i| row(i, w, false, "")).collect();
     section(col, header("PARKED IDEAS", Some(ideas.len()), Color::Magenta, ""), ideas, 5);
 
@@ -774,7 +857,7 @@ fn draw_detail(f: &mut Frame, app: &App, area: Rect) {
             }
             if !d.applicable.is_empty() {
                 lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled("Decisions that apply", Style::new().bold().fg(Color::Cyan))));
+                lines.push(Line::from(Span::styled("From history", Style::new().bold().fg(Color::Cyan))));
                 for r in &d.applicable {
                     let i = &r.item;
                     let w = why(i);
@@ -858,7 +941,7 @@ fn draw_help(f: &mut Frame) {
     f.render_widget(Clear, area);
     let rows = [
         ("Navigation", ""),
-        ("1-5, Tab, Shift-Tab", "switch tab: Brief, Items, Decisions, Journal, Triage"),
+        ("1-6, Tab, Shift-Tab", "switch tab: Overview, Items, Decisions, Journal, Triage, Timeline"),
         ("↑↓ j k, PgUp PgDn, g G", "move in the list (scroll the brief)"),
         ("J K", "scroll the detail pane"),
         ("Esc, ←", "back to the project list"),
