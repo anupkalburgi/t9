@@ -55,6 +55,7 @@ does its work and exits. A daemon (`t9 serve`) is planned for the UIs, not for c
 | `unlinked.rs` | Folders where agents worked without a project: suggestions, the registry in `.state/unlinked.json`, once-per-session hints. |
 | `decisions.rs` | The decision log: `decide`/`reject`, ADR-shaped bodies, the GLOBAL project, recall by scope, area and text (`applicable_decisions`, `check`, `prompt_context`), the Markdown export. |
 | `crates/t9-tui` | `t9 tui` (ratatui): `data.rs` is the only module that touches the store (the seam for a future REST backend), `app.rs` holds state and keys, `ui.rs` renders. Refreshes every 2 s; writes as `human` in a session whose cwd is the vault, so agents never pick it up. |
+| `crates/t9-web` | `t9 web`: a single-threaded tiny_http server on 127.0.0.1 with an embedded single-page app (`assets/`, no build step) and a JSON API (`api.rs`) over `Store`. Per-run token traded for an HttpOnly SameSite=Strict cookie, Host-header check, `X-T9` header on writes, strict CSP. |
 | `crates/t9/src/main.rs` | clap definitions and dispatch. Builds a `Caller` (cwd, agent, session, project) from flags and env. |
 | `print.rs` | Human-readable output. `--json` prints the same structs serialized. |
 | `hook.rs` | `t9 hook claude session-start|prompt|session-end`: reads the hook payload from stdin, never fails the session. |

@@ -237,6 +237,18 @@ enum Cmd {
     /// Terminal UI: projects, brief, item tree, decision log, journal, triage, search. Opens on this directory's
     /// project.
     Tui,
+    /// Web UI in your browser: overview, full plan tree, item pages with their whole story, questions you can
+    /// answer, decisions, experiments, resources, timeline. Local only (127.0.0.1, per-run token).
+    Web {
+        /// Open this item (e.g. QR-119) instead of the project overview.
+        id: Option<String>,
+        /// Port to listen on (default: any free port).
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Print the link without opening a browser.
+        #[arg(long)]
+        no_open: bool,
+    },
     /// The vault's git history: commit now, show the path, or run git in it.
     #[command(subcommand)]
     Vault(VaultCmd),
@@ -622,6 +634,27 @@ fn run(cli: Cli) -> Result<()> {
     if let Cmd::Tui = cli.cmd {
         return t9_tui::run(Store::open(env)?, &caller);
     }
+    if let Cmd::Web { id, port, no_open } = cli.cmd {
+        let mut store = Store::open(env)?;
+        let route = match id {
+            Some(i) => Some(format!("#/i/{}", normalize_item_id(&i)?)),
+            None => store.resolve(&caller)?.project.map(|p| format!("#/p/{}", p.meta.key)),
+        };
+        store.commit_on_drop = false;
+        let web = t9_web::Web::bind(port)?;
+        let url = web.url(route.as_deref());
+        println!("t9 web: {url}");
+        println!("(local only; the link carries this run's access token. Ctrl-C to stop.)");
+        if !no_open {
+            let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+            let _ = std::process::Command::new(opener)
+                .arg(&url)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+        }
+        return web.serve(store);
+    }
     let mut store = Store::open(env)?;
     store.commit_on_drop = true;
     if trace {
@@ -988,7 +1021,7 @@ fn run(cli: Cli) -> Result<()> {
             }
             emit(json, &items, |i| print::resources(i))?;
         }
-        Cmd::Vault(_) | Cmd::Tui => unreachable!("handled before the store is opened"),
+        Cmd::Vault(_) | Cmd::Tui | Cmd::Web { .. } => unreachable!("handled before the store is opened"),
     }
     if trace {
         eprintln!("trace: total {:?}", t0.elapsed());

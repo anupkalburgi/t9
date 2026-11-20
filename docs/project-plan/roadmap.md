@@ -9,7 +9,7 @@ Every milestone builds on the same core (`t9-core::Store`) and keeps the storage
 | M1+ | Decision log, git history, terminal UI, release binaries and installer | Done |
 | M2 | Local server (`t9 serve`) and a live TUI | Next |
 | M3 | MCP server, importing plans, decision mining, hygiene | Planned |
-| M4 | Semantic search and a web UI | Planned |
+| M4 | Web UI (done: `t9 web`) and semantic search | Web UI done; search planned |
 | M5 | Packaging and reach | Planned |
 
 ## M2: local server

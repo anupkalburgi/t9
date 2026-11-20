@@ -45,6 +45,7 @@ Values:
 | `t9 resources` | Resources of this project · `--type T` · `-a` include dropped |
 | `t9 check WORDS…` | `-n N` (default 10). Decisions, rejections and ideas of any status matching any word, in this project and the global log |
 | `t9 decisions` | `--area A`… · `-a/--all` (include superseded) · `-g/--global` · `--md` (ADR-style document) |
+| `t9 web [ID]` | Browser UI (opens this folder's project, or one item) · `--port N` · `--no-open`; see [web.md](web.md) |
 | `t9 tui` | Terminal UI (opens on this directory's project); see [tui.md](tui.md) |
 | `t9 project ls` / `t9 project show [KEY]` | |
 | `t9 session ls` | `--open` · `-A` · `-n N` |

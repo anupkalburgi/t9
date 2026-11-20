@@ -1,6 +1,6 @@
 # Status
 
-Version 0.1.3. Usable day to day. Prebuilt binaries for macOS and Linux (arm64, x86_64) install with one line;
+Version 0.1.5. Usable day to day. Prebuilt binaries for macOS and Linux (arm64, x86_64) install with one line;
 CI tests both systems.
 
 ## What exists
@@ -15,6 +15,7 @@ CI tests both systems.
 | Journal and sessions | Progress, findings, blockers, notes, handoffs, automatic status-change entries; sessions with focus; triage of unfiled and inbox entries |
 | Brief | `t9 context`: a token-budgeted summary for agents at session start |
 | TUI | `t9 tui`: an overview for humans (waiting on you, latest change, handoff, in progress, plans, issues, decisions), plan tree, decision log, journal, triage, search; records decisions, items, notes and status; live refresh |
+| Web UI | `t9 web`: overview, the full plan tree, item pages with where each item came from and what happened since, answering questions (recorded as decisions), decisions, experiments, resources, timeline, search, referenced files; local only with a per-run token |
 | Integrations | Claude Code plugin (SessionStart, UserPromptSubmit and SessionEnd hooks, plus a skill); an `AGENTS.md` section for Codex and others |
 | Quality | 37 tests: unit, TUI rendering and key handling, and end-to-end CLI tests covering resolution, inbox adoption, hand edits, lossless reindex, concurrent writers, the Claude hooks, background commits and the decision log |
 

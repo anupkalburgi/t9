@@ -103,7 +103,7 @@ Write a few entries per hour of work, not one per tool call. One or two sentence
 | You find a bug | `t9 add bug "…" [-l regression-of:BIL-9] [-p 1]` |
 | Something worked before and broke | `t9 add regression "…" -l regression-of:BIL-9` |
 | "We should come back to this" / a loose end | `t9 add revisit "…"` |
-| A question only the human can answer | `t9 add question "…"` |
+| A question only the human can answer | `t9 add question "Short question?" -b -` with the options, their trade-offs and your recommendation in the body (not in the title), plus where the evidence is (`-r` or a path) |
 | Blocked | `t9 status BIL-12 blocked -n "waiting on …"` |
 | Finished | `t9 done BIL-12 -n "how it was verified"` |
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.5
+
+- **Web UI:** `t9 web [ID]` opens a local browser UI: an overview, the full plan as a tree with progress and
+  filters, and a page for every item with its place in the plan, its whole history, where it came from (when, by
+  which agent and session, what was happening just before) and what happened since. Questions can be answered
+  there; the answer closes the question and is recorded as a decision. Also decisions, experiments, resources,
+  timeline, journal, About and search, and referenced files rendered in place. Refreshes as agents work.
+  Local only: 127.0.0.1, a per-run token in an HttpOnly cookie, Host checks, a strict CSP.
+- Agents are told to keep question titles short and put the options, trade-offs and a recommendation in the body.
+
 ## 0.1.4
 
 - TUI: every row shows how recently it changed: ● bright green (15 min), ● green (1 hour), • yellow (today),

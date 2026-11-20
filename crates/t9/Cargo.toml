@@ -19,6 +19,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 t9-core = { version = "0.1.0", path = "../t9-core" }
 t9-tui = { version = "0.1.0", path = "../t9-tui" }
+t9-web = { version = "0.1.4", path = "../t9-web" }
 
 [dev-dependencies]
 assert_cmd = "2.2.2"
