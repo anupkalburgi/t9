@@ -54,6 +54,7 @@ does its work and exits. A daemon (`t9 serve`) is planned for the UIs, not for c
 | `attention.rs` | `attention(project)`: one ranked list of what needs attention (overdue, due soon, ripe, loop, waiting, stale, unexplained) and the backlog count, used by the brief, `t9 pending`, the hooks and the web UI; `parse_when` for dates. |
 | `story.rs` | `story(id)`: an item's goal (stated, inherited or its parent's title), outcome (the closing note, classified), what it led to (links, backlinks, ids the note names) and its children's outcomes; `closings(project)`. |
 | `insights.rs` | `insights(project)`: signals of going in circles (flip-flops, reopened, repeats of dead ends, spinning branches, stuck work) and per-branch activity for the last 7 days. |
+| `history.rs` | also `timeline_view(project, since)`: lanes, item spans with outcomes, marks and sessions for the web Timeline. |
 | `history.rs` | `history(topic)` (everything on a topic, oldest first) and `timeline(project, since, topic)`, both as `Event`s. |
 | `unlinked.rs` | Folders where agents worked without a project: suggestions, the registry in `.state/unlinked.json`, once-per-session hints. |
 | `decisions.rs` | The decision log: `decide`/`reject`, ADR-shaped bodies, the GLOBAL project, recall by scope, area and text (`applicable_decisions`, `check`, `prompt_context`), the Markdown export. |

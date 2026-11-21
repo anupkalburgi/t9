@@ -366,17 +366,7 @@ async function renderResources(key) {
       rs.map((r) => `<tr><td>${kind(r.resource_type || "other")}</td><td><a href="#/i/${esc(r.id)}">${esc(r.title)}</a> <span class="faint mono">${esc(r.id)}</span></td><td class="mono">${esc(r.location || "")}</td><td>${esc(r.owner || "")}</td><td class="small">${inline((r.body || "").split("\n")[0])}</td></tr>`).join("") + `</table>`
       : '<div class="empty">No resources recorded yet. <code>t9 add resource "…" --type table --at …</code></div>');
 }
-async function renderTimeline(key) {
-  const ev = await api(`p/${key}/timeline?days=90`);
-  let day = "", h = `<h1>Timeline</h1><p class="muted">What happened when, newest first (90 days).</p>${legend()}`;
-  for (const e of ev) {
-    const d = new Date(e.at).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
-    if (d !== day) { h += `<div class="day">${esc(d)}</div>`; day = d; }
-    const id = e.source === "entry" ? e.item : e.id;
-    h += `<div class="entry">${dot(e.at)}<span class="when">${esc(when(e.at, false))}</span><span class="kind e-${esc(e.kind.replace(/^new /, ""))}">${esc(e.kind)}${id ? ` <a class="mono" href="#/i/${esc(id)}">${esc(id)}</a>` : ""}</span><span class="text clip">${inline(e.title)}</span></div>`;
-  }
-  main().innerHTML = ev.length ? h : h + '<div class="empty">Nothing in this period.</div>';
-}
+// renderTimeline lives in timeline.js.
 async function renderJournal(key) {
   const es = await api(`p/${key}/journal?limit=400`);
   main().innerHTML = `<h1>Journal</h1><p class="muted">Every entry, newest first.</p>${legend()}<div class="entries">${es.map((e) => entryRow(e)).join("")}</div>`;
@@ -787,6 +777,7 @@ function selectNode(id, reveal = false) {
     centerOn(id);
   }
   highlight();
+  if (typeof tlHighlight === "function") tlHighlight();
   renderPanel();
 }
 

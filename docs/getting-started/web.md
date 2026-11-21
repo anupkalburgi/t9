@@ -21,7 +21,8 @@ and waits if you are typing). Stop it with Ctrl-C.
 | **Decisions** | Every decision, rejection and change of mind, newest first. |
 | **Experiments** | Running, failed or inconclusive (with retry conditions), and succeeded. |
 | **Resources** | Datasets, tables, models, endpoints, services, with where they live and who owns them. |
-| **Timeline**, **Journal** | What happened when, by day; every entry. |
+| **Timeline** | **Lanes**: one lane per feature (or plan, or group of loose items such as decisions and questions), most recently active first, with a sessions row and an activity histogram. Each lane shows what happened as marks (● new, ✓ done, ⇢ combined or superseded, ✗ dropped or failed, ◆ decision, ★ finding, ⚑ blocker, ✉ handoff, ↺ reopened, ? question); bursts collapse into one pill (`●45`, `✗5`), and quiet hours are squeezed into a marked break (`≈5h`) so busy stretches get the room. Open a lane to see each item as a bar from created to closed, coloured by outcome, with due dates (◇) and idle work hatched. Click anything to see its story in the side panel; double-click opens its page. **Story**: each day in a sentence ("Closed 17 (14 ✓, 3 ✗), 12 of them in one batch at 12:50 AM. Opened 6. Decided QR-130, QR-131…"), then its key events, with runs folded. Ranges: 24 hours to all. |
+| **Journal** | Every entry. |
 | **About** | The project's About. |
 | **Search** | Full-text matches plus the topic's history (`t9 history`), oldest first. |
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.9
+
+- **Timeline, redone as lanes.** One lane per feature (or plan, or group of loose items), most recently active
+  first, with a sessions row and an activity histogram. Marks show what happened (✓ done, ⇢ combined, ✗ dropped
+  or failed, ◆ decision, ★ finding, ⚑ blocker, ✉ handoff, ↺ reopened, ● new, ? question); bursts collapse into
+  one pill and quiet hours are squeezed into a marked break. Open a lane to see each item as a bar from created to
+  closed, coloured by outcome, with due dates and idle work hatched. Everything opens in the same side panel as
+  the Map.
+- **Story mode:** each day in a sentence (what closed and how, what opened, what was decided, blockers,
+  findings, where the work went), then its key events, with runs folded.
+
 ## 0.1.8
 
 - **Goal and outcome on every item.** `--goal "why"` on `add`, `update` and `focus` (recorded if the item has

@@ -170,6 +170,18 @@ fn web_api_end_to_end() {
     let e = json(http(port, "POST", "/api/item/BIL-1/still", &hdrs, r#"{"text":"waiting for the provider"}"#));
     assert_eq!(e["kind"], "checkin");
 
+    // The timeline: lanes, lifespans with outcomes, and each decision once.
+    let tl = json(http(port, "GET", "/api/p/BIL/lanes", &auth, ""));
+    assert!(tl["lanes"].as_array().unwrap().iter().any(|l| l["id"] == "BIL-1"), "{tl}");
+    let span = tl["spans"].as_array().unwrap().iter().find(|s| s["id"] == "BIL-2").unwrap();
+    assert_eq!((span["lane"].as_str(), span["outcome"].as_str()), (Some("BIL-1"), Some("done")));
+    assert!(span["closed"].is_string());
+    let decisions =
+        tl["marks"].as_array().unwrap().iter().filter(|m| m["kind"] == "decision" && m["item"] == "BIL-3").count();
+    assert_eq!(decisions, 1, "{tl}");
+    let js = http(port, "GET", "/timeline.js", &auth, "");
+    assert!(js.status == 200 && js.body.contains("function renderTimeline"));
+
     // Unknown items.
     assert_eq!(http(port, "GET", "/api/item/BIL-99", &auth, "").status, 404);
 }

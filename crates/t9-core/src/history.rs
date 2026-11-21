@@ -268,3 +268,256 @@ impl Store {
         Ok(events)
     }
 }
+
+// ---------------------------------------------------------------- the timeline chart
+
+/// One lane of the timeline chart: a feature or phase (or a plan, for work directly under it), or a group of
+/// loose items.
+#[derive(Debug, Clone, Serialize)]
+pub struct Lane {
+    pub id: String,
+    pub title: String,
+    pub kind: Option<Kind>,
+    pub status: Option<Status>,
+    pub open: usize,
+    pub closed: usize,
+    pub last: Option<Timestamp>,
+}
+
+/// An item's lifespan: created → closed (or still open).
+#[derive(Debug, Clone, Serialize)]
+pub struct Span {
+    pub id: String,
+    pub lane: String,
+    pub kind: Kind,
+    pub status: Status,
+    pub title: String,
+    pub created: Timestamp,
+    pub closed: Option<Timestamp>,
+    /// done, merged, dead, partial, open.
+    pub outcome: &'static str,
+    pub due: Option<chrono::NaiveDate>,
+}
+
+/// A mark on the chart.
+#[derive(Debug, Clone, Serialize)]
+pub struct Mark {
+    pub at: Timestamp,
+    /// new, done, merged, dead, partial, reopened, started, blocked, decision, finding, blocker, handoff, progress,
+    /// checkin, note.
+    pub kind: &'static str,
+    pub glyph: &'static str,
+    pub item: Option<String>,
+    pub lane: String,
+    pub text: String,
+    pub agent: String,
+    pub session: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionSpan {
+    pub id: String,
+    pub agent: String,
+    pub started: Timestamp,
+    pub ended: Option<Timestamp>,
+    pub last_seen: Option<Timestamp>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TimelineView {
+    pub lanes: Vec<Lane>,
+    pub spans: Vec<Span>,
+    pub marks: Vec<Mark>,
+    pub sessions: Vec<SessionSpan>,
+    pub now: Timestamp,
+}
+
+/// Lane for an item: its feature or phase (the first one below the plan, from the top), else its plan, else a group
+/// by kind for loose items. Structural items without a parent are their own lane.
+fn lane_of(i: &Item, by_id: &std::collections::HashMap<&str, &Item>) -> String {
+    let structural = |k: Kind| matches!(k, Kind::Plan | Kind::Phase | Kind::Feature);
+    let mut chain = vec![i];
+    let mut cur = i.meta.parent.as_deref();
+    while let Some(p) = cur {
+        let Some(a) = by_id.get(p) else { break };
+        if chain.iter().any(|c| c.meta.id == a.meta.id) {
+            break;
+        }
+        chain.push(a);
+        cur = a.meta.parent.as_deref();
+    }
+    chain.reverse(); // top first
+    if let Some(f) = chain.iter().find(|c| matches!(c.meta.kind, Kind::Feature | Kind::Phase)) {
+        return f.meta.id.clone();
+    }
+    if structural(chain[0].meta.kind) {
+        return chain[0].meta.id.clone();
+    }
+    match i.meta.kind {
+        Kind::Decision => "~decisions".into(),
+        Kind::Question => "~questions".into(),
+        Kind::Idea => "~ideas".into(),
+        Kind::Experiment => "~experiments".into(),
+        Kind::Resource => "~resources".into(),
+        _ => "~other".into(),
+    }
+}
+
+impl Store {
+    pub fn timeline_view(&mut self, project: &str, since: Option<Timestamp>) -> Result<TimelineView> {
+        self.sync_project(project)?;
+        let items =
+            self.items(&ItemFilter { project: Some(project.into()), include_closed: true, ..Default::default() })?;
+        let by_id: std::collections::HashMap<&str, &Item> = items.iter().map(|i| (i.meta.id.as_str(), i)).collect();
+        let closings = self.closings(project)?;
+        let lane: std::collections::HashMap<String, String> =
+            items.iter().map(|i| (i.meta.id.clone(), lane_of(i, &by_id))).collect();
+        let in_range = |t: Timestamp| since.is_none_or(|s| t >= s);
+
+        let mut spans = vec![];
+        for i in items.iter().filter(|i| !matches!(i.meta.kind, Kind::Resource | Kind::Note)) {
+            let c = closings.get(&i.meta.id).filter(|_| i.meta.status.is_closed());
+            if !in_range(c.map_or(crate::model::now(), |c| c.at)) {
+                continue;
+            }
+            let outcome = if i.meta.status.is_closed() {
+                crate::story::classify(i.meta.status, c.and_then(|c| c.note.as_deref()).unwrap_or("")).0
+            } else {
+                "open"
+            };
+            spans.push(Span {
+                id: i.meta.id.clone(),
+                lane: lane[&i.meta.id].clone(),
+                kind: i.meta.kind,
+                status: i.meta.status,
+                title: i.meta.title.clone(),
+                created: i.meta.created,
+                closed: c.map(|c| c.at),
+                outcome,
+                due: i.meta.due,
+            });
+        }
+
+        let mut marks = vec![];
+        for i in items.iter().filter(|i| in_range(i.meta.created)) {
+            let glyph = match i.meta.kind {
+                Kind::Question => "?",
+                Kind::Decision => "◆",
+                Kind::Idea => "✦",
+                Kind::Experiment => "⚗",
+                _ => "●",
+            };
+            marks.push(Mark {
+                at: i.meta.created,
+                kind: if i.meta.kind == Kind::Decision { "decision" } else { "new" },
+                glyph,
+                item: Some(i.meta.id.clone()),
+                lane: lane[&i.meta.id].clone(),
+                text: format!("new {}: {}", i.meta.kind, i.meta.title),
+                agent: i.meta.created_by.clone(),
+                session: i.meta.created_in.clone(),
+            });
+        }
+        let entries = self.entries(&EntryFilter {
+            project: Some(project.into()),
+            since,
+            limit: Some(20_000),
+            ..Default::default()
+        })?;
+        for e in &entries {
+            // "Decided X" entries repeat the new decision item: keep one.
+            if e.meta.kind == EntryKind::Decision
+                && let Some(d) = e.meta.item.as_deref().and_then(|i| by_id.get(i))
+                && d.meta.kind == Kind::Decision
+                && (e.meta.at - d.meta.created).num_seconds().abs() <= 60
+            {
+                continue;
+            }
+            let item_lane =
+                e.meta.item.as_ref().and_then(|i| lane.get(i)).cloned().unwrap_or_else(|| "~sessions".into());
+            let (kind, glyph): (&'static str, &'static str) = match e.meta.kind {
+                EntryKind::StatusChange => match crate::insights::parse_status_change(&e.body) {
+                    Some((_, _, to)) if to.is_closed() => {
+                        let note = e.body.split_once(" — ").map(|x| x.1).unwrap_or("");
+                        let c = crate::story::classify(to, note).0;
+                        (c, crate::story::glyph(c))
+                    }
+                    Some((_, from, _)) if from.is_closed() => ("reopened", "↺"),
+                    Some((_, _, Status::Active)) => ("started", "▸"),
+                    Some((_, _, Status::Blocked)) => ("blocked", "⚑"),
+                    _ => ("note", "·"),
+                },
+                EntryKind::Decision => ("decision", "◆"),
+                EntryKind::Finding => ("finding", "★"),
+                EntryKind::Blocker => ("blocker", "⚑"),
+                EntryKind::Handoff => ("handoff", "✉"),
+                EntryKind::Progress => ("progress", "·"),
+                EntryKind::Checkin => ("checkin", "·"),
+                EntryKind::Note => ("note", "·"),
+            };
+            marks.push(Mark {
+                at: e.meta.at,
+                kind,
+                glyph,
+                item: e.meta.item.clone(),
+                lane: item_lane,
+                text: crate::context::first_line(&e.body, 200),
+                agent: e.meta.agent.clone(),
+                session: e.meta.session.clone(),
+            });
+        }
+        marks.sort_by_key(|m| m.at);
+
+        let mut lanes: Vec<Lane> = vec![];
+        let group_title = |id: &str| match id {
+            "~decisions" => "Decisions",
+            "~questions" => "Questions",
+            "~ideas" => "Ideas",
+            "~experiments" => "Experiments",
+            "~resources" => "Resources",
+            "~sessions" => "Sessions and handoffs",
+            _ => "Other work",
+        };
+        for s in &spans {
+            let l = match lanes.iter_mut().position(|l| l.id == s.lane) {
+                Some(p) => &mut lanes[p],
+                None => {
+                    let it = by_id.get(s.lane.as_str());
+                    lanes.push(Lane {
+                        id: s.lane.clone(),
+                        title: it.map_or_else(|| group_title(&s.lane).to_string(), |i| i.meta.title.clone()),
+                        kind: it.map(|i| i.meta.kind),
+                        status: it.map(|i| i.meta.status),
+                        open: 0,
+                        closed: 0,
+                        last: None,
+                    });
+                    lanes.last_mut().unwrap()
+                }
+            };
+            if s.id != s.lane {
+                if s.closed.is_some() { l.closed += 1 } else { l.open += 1 }
+            }
+        }
+        for m in &marks {
+            if let Some(l) = lanes.iter_mut().find(|l| l.id == m.lane) {
+                l.last = l.last.max(Some(m.at));
+            }
+        }
+        lanes.sort_by_key(|l| std::cmp::Reverse(l.last));
+
+        let sessions = self
+            .sessions(Some(project), false, 500)?
+            .into_iter()
+            .filter(|s| in_range(s.meta.ended.or(s.last_seen).unwrap_or(s.meta.started)))
+            .map(|s| SessionSpan {
+                id: s.meta.id.clone(),
+                agent: s.meta.agent.clone(),
+                started: s.meta.started,
+                ended: s.meta.ended,
+                last_seen: s.last_seen,
+            })
+            .collect();
+        Ok(TimelineView { lanes, spans, marks, sessions, now: crate::model::now() })
+    }
+}

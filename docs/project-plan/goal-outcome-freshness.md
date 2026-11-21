@@ -85,7 +85,7 @@ Agents only run while a session is open, so "timely" means these moments:
 | Release | Scope |
 |---|---|
 | **0.1.8** | `goal`, `due`, `--after`; attention model; `t9 pending`, `t9 still`; brief reordered; reminders in the prompt hook and on `done`/`focus`; skill wording; panel story header and the closing-reason fix; web badges and the Needs attention card |
-| **0.1.9** | Web assets split into modules; the lane-chart Timeline with the shared panel; map outcome marks and hover cards |
+| **0.1.9** | The lane-chart Timeline with Story mode and the shared panel (done; the timeline is its own asset file). Still to do: split `app.js` into modules, map hover cards |
 | **0.2.0** | "Ask the agents": questions from the web panel addressed to agents, shown in the brief, answered with `t9 answer`; map semantic zoom |
 
 ## Not doing

@@ -18,6 +18,7 @@ use tiny_http::{Header, Method, Request, Response, Server};
 const INDEX: &str = include_str!("../assets/index.html");
 const APP_JS: &str = include_str!("../assets/app.js");
 const APP_CSS: &str = include_str!("../assets/app.css");
+const TIMELINE_JS: &str = include_str!("../assets/timeline.js");
 const COOKIE: &str = "t9_token";
 
 pub struct Web {
@@ -113,6 +114,7 @@ fn handle(store: &mut Store, token: &str, port: u16, mut req: Request) -> Result
         (Method::Get, "/") => text(200, INDEX, "text/html; charset=utf-8"),
         (Method::Get, "/app.js") => text(200, APP_JS, "text/javascript; charset=utf-8"),
         (Method::Get, "/app.css") => text(200, APP_CSS, "text/css; charset=utf-8"),
+        (Method::Get, "/timeline.js") => text(200, TIMELINE_JS, "text/javascript; charset=utf-8"),
         (Method::Get, "/favicon.ico") => text(204, "", "image/x-icon"),
         (m, p) if p.starts_with("/api/") => {
             let write = m == Method::Post;

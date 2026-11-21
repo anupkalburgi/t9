@@ -121,6 +121,10 @@ pub fn route(store: &mut Store, m: &Method, segs: &[&str], params: &[(String, St
             let topic = param(params, "topic").filter(|t| !t.trim().is_empty());
             Ok(serde_json::to_value(store.timeline(key, Some(now() - chrono::Duration::days(days)), topic)?)?)
         }
+        (Method::Get, ["p", key, "lanes"]) => {
+            let days: Option<i64> = param(params, "days").and_then(|d| d.parse().ok()).filter(|d| *d > 0);
+            Ok(serde_json::to_value(store.timeline_view(key, days.map(|d| now() - chrono::Duration::days(d)))?)?)
+        }
         (Method::Get, ["p", key, "sessions"]) => Ok(serde_json::to_value(store.sessions(Some(key), false, 200)?)?),
         (Method::Get, ["p", key, "insights"]) => Ok(serde_json::to_value(store.insights(key)?)?),
         (Method::Get, ["p", key, "attention"]) => {
