@@ -127,6 +127,7 @@ pub fn route(store: &mut Store, m: &Method, segs: &[&str], params: &[(String, St
         }
         (Method::Get, ["p", key, "sessions"]) => Ok(serde_json::to_value(store.sessions(Some(key), false, 200)?)?),
         (Method::Get, ["p", key, "insights"]) => Ok(serde_json::to_value(store.insights(key)?)?),
+        (Method::Get, ["p", key, "asked"]) => Ok(serde_json::to_value(store.asked(key)?)?),
         (Method::Get, ["p", key, "attention"]) => {
             let signals = store.insights(key)?.signals;
             Ok(serde_json::to_value(store.attention(key, Some(&signals))?)?)
@@ -177,6 +178,18 @@ pub fn route(store: &mut Store, m: &Method, segs: &[&str], params: &[(String, St
             Ok(serde_json::to_value(e)?)
         }
         (Method::Post, ["item", id, "answer"]) => answer(store, id, body),
+        (Method::Post, ["item", id, "ask"]) => {
+            #[derive(Deserialize)]
+            struct B {
+                text: String,
+            }
+            let b: B = serde_json::from_str(body)?;
+            let it = store.item(id)?;
+            let caller = human(store, &it.project);
+            let q = store.ask_agents(&caller, id, &b.text)?;
+            committed(store);
+            Ok(serde_json::to_value(q)?)
+        }
         (Method::Post, ["item", id, "fields"]) => {
             #[derive(Deserialize)]
             struct B {
@@ -496,8 +509,7 @@ fn file(store: &mut Store, key: &str, rel: &str) -> Result<Value> {
     bail!("not found: {rel} in the project's folder")
 }
 
-/// Answers a question: records the answer on it, closes it, and optionally records it as a decision so later
-/// sessions follow it.
+/// Answers a question (as the human); optionally records it as a decision.
 fn answer(store: &mut Store, id: &str, body: &str) -> Result<Value> {
     #[derive(Deserialize)]
     struct B {
@@ -506,46 +518,9 @@ fn answer(store: &mut Store, id: &str, body: &str) -> Result<Value> {
         decide: bool,
     }
     let b: B = serde_json::from_str(body)?;
-    let answer = b.answer.trim().to_string();
-    if answer.is_empty() {
-        bail!("the answer is empty");
-    }
     let q = store.item(id)?;
     let caller = human(store, &q.project);
-    store.log(
-        &caller,
-        LogInput {
-            kind: EntryKind::Note,
-            body: format!("Answer: {answer}"),
-            item: Some(q.meta.id.clone()),
-            refs: vec![],
-        },
-    )?;
-    let mut decision = None;
-    if b.decide {
-        let title: String = answer.lines().next().unwrap_or(&answer).chars().take(140).collect();
-        let d = store.decide(
-            &caller,
-            DecisionInput {
-                title,
-                because: Some(format!("Answer to {} ({})", q.meta.id, q.meta.title)),
-                body: if answer.contains('\n') { answer.clone() } else { String::new() },
-                areas: q.meta.areas.clone(),
-                applies_to: q.meta.parent.iter().cloned().collect(),
-                ..Default::default()
-            },
-        )?;
-        decision = Some(d.meta.id.clone());
-    }
-    let note = match &decision {
-        Some(d) => format!("answered; recorded as {d}"),
-        None => "answered".to_string(),
-    };
-    let closed = store.update_item(
-        &caller,
-        id,
-        ItemPatch { status: Some(Status::Done), note: Some(note), ..Default::default() },
-    )?;
+    let (closed, decision) = store.answer(&caller, id, &b.answer, b.decide)?;
     committed(store);
     Ok(json!({ "item": closed, "decision": decision }))
 }

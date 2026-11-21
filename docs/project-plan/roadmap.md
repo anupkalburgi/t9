@@ -7,7 +7,7 @@ Every milestone builds on the same core (`t9-core::Store`) and keeps the storage
 | M0 | Core and CLI | Done |
 | M1 | Agent integration: Claude Code plugin, `AGENTS.md` | Done |
 | M1+ | Decision log, git history, terminal UI, release binaries and installer | Done |
-| M1++ | Goal and outcome, freshness, reminders through the agent; lane-chart timeline; asking agents from the web ([plan](goal-outcome-freshness.md)) | 0.1.8, 0.1.9 done; 0.2.0 next |
+| M1++ | Goal and outcome, freshness, reminders through the agent; lane-chart timeline; asking agents from the web ([plan](goal-outcome-freshness.md)) | 0.1.8, 0.1.9, 0.2.0 done |
 | M2 | Local server (`t9 serve`) and a live TUI | Planned |
 | M3 | MCP server, importing plans, decision mining, hygiene | Planned |
 | M4 | Web UI (done: `t9 web`) and semantic search | Web UI done; search planned |

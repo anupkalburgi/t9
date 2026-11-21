@@ -182,6 +182,20 @@ fn web_api_end_to_end() {
     let js = http(port, "GET", "/timeline.js", &auth, "");
     assert!(js.status == 200 && js.body.contains("function renderTimeline"));
 
+    // Asking the agents from the web: a question for agents about the item, shown on its story until answered.
+    let q = json(http(port, "POST", "/api/item/BIL-1/ask", &hdrs, r#"{"text":"Why do webhooks retry three times?"}"#));
+    let qid = q["id"].as_str().unwrap().to_string();
+    let asked = json(http(port, "GET", "/api/p/BIL/asked", &auth, ""));
+    assert_eq!((asked[0]["id"].as_str(), asked[0]["about"].as_str()), (Some(qid.as_str()), Some("BIL-1")));
+    assert!(asked[0]["answer"].is_null());
+    let page = json(http(port, "GET", "/api/item/BIL-1", &auth, ""));
+    assert_eq!(page["story"]["asked"][0]["id"], qid.as_str());
+    let att = json(http(port, "GET", "/api/p/BIL/attention", &auth, ""));
+    assert_eq!(
+        (att["items"][0]["id"].as_str(), att["items"][0]["reason"].as_str()),
+        (Some(qid.as_str()), Some("asked"))
+    );
+
     // Unknown items.
     assert_eq!(http(port, "GET", "/api/item/BIL-99", &auth, "").status, 404);
 }

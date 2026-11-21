@@ -2,6 +2,7 @@
 //! resolution, context brief and search. Front ends (CLI, MCP, REST) are thin layers over [`Store`].
 
 pub mod about;
+pub mod ask;
 pub mod attention;
 pub mod clock;
 pub mod context;

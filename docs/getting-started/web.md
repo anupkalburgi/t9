@@ -54,6 +54,16 @@ File paths mentioned in items and notes (for example `local/reports/…/options.
 they are Markdown. Only files inside the project's folder are shown, read-only, never hidden or credential-like
 files.
 
+## Asking the agents
+
+Under every item's story there is an **Ask the agents** box ("what was the goal?", "did this also fix telecom?",
+"is it still needed?"). The question is recorded as a question for the agents about that item (`t9 ask ID "…"`
+does the same from a terminal). The agent reads it at the right moment: if a session is running in the project,
+on your next message to it; otherwise at the top of the next session's brief, under "Asked by the user". It
+answers from evidence (`t9 answer ID "…"`) or says it cannot tell, and tells you in the chat. The answer appears
+on the item's story (Q and A), on the Questions page under "You asked the agents", and on the Overview. Nothing
+runs in the background, so an answer comes when an agent works in the project.
+
 ## Answering questions
 
 An open question has an **Answer** box. Your answer is recorded on the question, the question is closed, and (by

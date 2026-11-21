@@ -65,6 +65,8 @@ Values:
 | `t9 focus ID` | `--goal WHY` (recorded if it has none) · `--no-activate` (don't move `open` to `active`) · `--clear` |
 | `t9 status ID STATUS` | `-n/--note TEXT` (when closing: the outcome) · `--due` `--goal` `--after` · `--retry-when C` · `--retry-after DATE` (a date, `30d`/`6w`/`3m`, or `none`) |
 | `t9 done ID` | `-n/--note TEXT` (alias `--outcome`): what came out of it. Without one, t9 suggests recording it; items that waited on this one are listed as ripe |
+| `t9 ask ID QUESTION…` | Ask the agents about an item; the next agent session in the project answers it |
+| `t9 answer ID ANSWER…` | Answer a question (agents: one the user asked); closes it and records the answer on the item it is about · `--decide` also records a decision |
 | `t9 still ID -n WHY` | Still relevant: a check-in that resets the idle clock without counting as progress |
 | `t9 update ID` | `--goal WHY` · `--due WHEN\|none` · `--after ID`… · `--area A`… · `--hypothesis` `--retry-when` `--retry-after` `--type` `--at` `--owner` · `--title` · `--status` · `--parent ID\|none` · `-p 0-9\|none` · `-t TAG`… · `--untag TAG`… · `-l rel:ID`… · `-b BODY` · `--rev N` (fail on conflict) · `-n NOTE` |
 | `t9 decide TITLE…` | `-w/--because WHY` · `-r/--rejected "option: why not"`… · `--area A`… · `--for ID`… (applies to that item and below) · `-s/--supersedes ID`… · `--proposed` · `-g/--global` · `-b/--body NOTES` · `--parent ID` |

@@ -206,8 +206,17 @@ pub struct Link {
     pub to: String,
 }
 
-pub const LINK_RELS: &[&str] =
-    &["blocks", "blocked-by", "relates", "regression-of", "supersedes", "superseded-by", "duplicate-of", "applies-to"];
+pub const LINK_RELS: &[&str] = &[
+    "blocks",
+    "blocked-by",
+    "relates",
+    "regression-of",
+    "supersedes",
+    "superseded-by",
+    "duplicate-of",
+    "applies-to",
+    "about",
+];
 
 impl FromStr for Link {
     type Err = Error;

@@ -256,6 +256,12 @@ async function renderOverview(key) {
     ...b.in_progress.filter((i) => i.status === "blocked").map((i) => row(i, "blocked")),
   ];
   if (waiting.length) grid.push(card("Waiting on you", waiting.length, `<div class="rows">${waiting.join("")}</div>`, "alert"));
+  try {
+    const asked = await api(`p/${key}/asked`);
+    const recent = asked.filter((a) => !closedStatus(a.status) || (a.answered_at && Date.now() - Date.parse(a.answered_at) < 7 * 864e5));
+    if (recent.length) grid.push(card("You asked the agents", recent.filter((a) => !a.answer).length + " waiting",
+      `<div class="asklist">${recent.slice(0, 6).map((a) => `<div class="ask">${a.about ? `<div class="small muted">about <a class="mono" href="#/i/${esc(a.about)}">${esc(a.about)}</a> ${esc(shortText(a.about_title || "", 50))}</div>` : ""}${askedHtml(a).replace(/^<div class="ask">|<\/div>$/g, "")}</div>`).join("")}</div><div class="more"><a href="#/p/${esc(key)}/questions">All questions →</a></div>`));
+  } catch (e) { /* optional */ }
   const att = b.attention || { items: [], backlog: 0 };
   if (att.items.length || att.backlog) {
     const byId = (a) => (state.items || []).find((x) => x.id === a.id) || a;
@@ -341,9 +347,12 @@ function renderList(title, intro, list, fmt) {
   main().innerHTML = `<h1>${title}</h1><p class="muted">${intro}</p>${legend()}${rows(list, fmt, 500)}`;
 }
 async function renderQuestions(key) {
-  const qs = state.items.filter((i) => i.kind === "question");
+  const all = state.items.filter((i) => i.kind === "question");
+  const qs = all.filter((i) => !isForAgents(i));
   const open = qs.filter((i) => !closedStatus(i.status)), closed = qs.filter((i) => closedStatus(i.status));
+  const asked = await api(`p/${key}/asked`);
   main().innerHTML = `<h1>Questions</h1><p class="muted">Questions agents could not answer themselves. Open one to see why it was asked and to answer it.</p>${legend()}` +
+    (asked.length ? `<h2>You asked the agents <span class="faint">${asked.length}</span></h2><div class="asklist">${asked.map((a) => `<div class="ask">${a.about ? `<div class="small muted">about <a class="mono" href="#/i/${esc(a.about)}">${esc(a.about)}</a> ${esc(shortText(a.about_title || "", 60))}</div>` : ""}${askedHtml(a).replace(/^<div class="ask">|<\/div>$/g, "")}</div>`).join("")}</div>` : "") +
     `<h2>Open <span class="faint">${open.length}</span></h2>${rows(open, (i) => row(i, `asked ${esc(ago(i.created))} by ${esc(i.created_by || "?")}`), 500)}` +
     `<h2>Answered <span class="faint">${closed.length}</span></h2>${rows(closed, (i) => row(i, esc(ago(i.updated))), 500)}`;
 }
@@ -470,7 +479,7 @@ function renderItem(p) {
 
 // ---------------------------------------------------------------- story: goal → outcome → led to
 
-const FRESH_LABEL = { overdue: "overdue", "due-soon": "due", ripe: "ripe", waiting: "waiting", stale: "idle", loop: "loop", unexplained: "no outcome" };
+const FRESH_LABEL = { asked: "for agents", overdue: "overdue", "due-soon": "due", ripe: "ripe", waiting: "waiting", stale: "idle", loop: "loop", unexplained: "no outcome" };
 function freshOf(i) {
   return i.fresh || (state.items && state.items.find((x) => x.id === i.id)?.fresh) || null;
 }
@@ -512,12 +521,32 @@ function storyHtml(p) {
     : "";
   const f = i.fresh;
   const now = f || i.due ? rowS("Now", `${freshBadge(f)} ${f ? esc(f.detail) : ""}${i.due && !(f && /due/.test(f.detail)) ? ` <span class="muted">due ${esc(i.due)}</span>` : ""}`) : "";
-  return `<section class="story">${goal}${outcome}${led}${roll}${now}</section>`;
+  const asked = (s.asked || []).length ? rowS("Asked", s.asked.map(askedHtml).join("")) : "";
+  const forAgents = (i.tags || []).includes("for-agents");
+  const askBox = forAgents ? "" : `<div class="ask-box"><textarea id="askin" class="short" placeholder="Ask the agents about ${esc(i.id)}: what was the goal, what came out of it, is it still needed…"></textarea>` +
+    `<div class="small"><button id="askb">Ask the agents</button> <span class="muted">The agent running in this project answers on your next message to it, or the next session at its start.</span> <span id="askmsg"></span></div></div>`;
+  return `<section class="story">${goal}${outcome}${led}${roll}${now}${asked}</section>${askBox}`;
+}
+const isForAgents = (i) => i.kind === "question" && (i.tags || []).includes("for-agents");
+function askedHtml(a) {
+  const q = `<div class="ask-q"><b>Q</b> <a class="mono" href="#/i/${esc(a.id)}">${esc(a.id)}</a> ${inline(a.question)} <span class="small muted">· you, ${esc(ago(a.asked_at))}</span></div>`;
+  const ans = a.answer
+    ? `<div class="ask-a"><b>A</b> ${inline(a.answer)} <span class="small muted">· ${esc(a.answered_by || "?")}, ${esc(ago(a.answered_at))}</span></div>`
+    : closedStatus(a.status) ? `<div class="ask-a faint">closed without an answer</div>` : `<div class="ask-a waiting">waiting for the next agent session in this project</div>`;
+  return `<div class="ask">${q}${ans}</div>`;
 }
 
 // Goal, due date and check-in controls shared by the panel and the item page. `done` re-renders after a save.
 function storyActions(el, i, done) {
   const wrap = el.querySelector(".story");
+  const ask = el.querySelector("#askb");
+  if (ask) ask.onclick = async () => {
+    const t = $("#askin").value.trim();
+    if (!t) { $("#askmsg").innerHTML = '<span class="err">type a question</span>'; return; }
+    ask.disabled = true;
+    try { await post(`item/${i.id}/ask`, { text: t }); $("#askin").value = ""; done(); }
+    catch (e) { $("#askmsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; ask.disabled = false; }
+  };
   el.querySelectorAll("[data-setgoal]").forEach((b) => (b.onclick = () => {
     const box = document.createElement("div");
     box.className = "st-edit";

@@ -51,6 +51,7 @@ does its work and exits. A daemon (`t9 serve`) is planned for the UIs, not for c
 | `store.rs` | `Store`: the API every front end uses. Locking, atomic writes, sync, resolution, sessions, items, journal, attach/adopt. |
 | `context.rs` | Builds the brief (`Brief`) and renders it to a token budget. |
 | `about.rs` | The project's About: sections in the body of `project.md`, parse/render, `about_add`, `about_set`, `about_confirm`. |
+| `ask.rs` | Asking the agents: `ask_agents(about, text)` (a `question` tagged `for-agents`, linked `about:ID`), `answer(id, text, decide)` (records the answer on the question and the item, closes it, optionally decides), `asked(project)`. |
 | `attention.rs` | `attention(project)`: one ranked list of what needs attention (overdue, due soon, ripe, loop, waiting, stale, unexplained) and the backlog count, used by the brief, `t9 pending`, the hooks and the web UI; `parse_when` for dates. |
 | `story.rs` | `story(id)`: an item's goal (stated, inherited or its parent's title), outcome (the closing note, classified), what it led to (links, backlinks, ids the note names) and its children's outcomes; `closings(project)`. |
 | `insights.rs` | `insights(project)`: signals of going in circles (flip-flops, reopened, repeats of dead ends, spinning branches, stuck work) and per-branch activity for the last 7 days. |

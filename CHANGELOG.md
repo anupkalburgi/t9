@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0
+
+- **Ask the agents.** Every item's story has an "Ask the agents" box (and `t9 ask ID "…"` in a terminal). The
+  question reaches the agent at the right moment: on your next message to a session running in the project
+  (once), or first in the next session's brief under "Asked by the user"; `t9 pending` lists it first. The agent
+  answers from evidence with the new `t9 answer ID "…"` (or says it cannot tell) and tells you; the answer is
+  recorded on the question and on the item, shown as Q and A on the item's story, on the Questions page ("You
+  asked the agents") and on the Overview.
+- `t9 answer` also works for ordinary questions (`--decide` records the answer as a decision), like the web
+  Answer box.
+
 ## 0.1.9
 
 - **Timeline, redone as lanes.** One lane per feature (or plan, or group of loose items), most recently active

@@ -112,6 +112,22 @@ enum Cmd {
         #[arg(long, short = 'n', default_value_t = 50)]
         limit: usize,
     },
+    /// Ask the agents a question about an item; the next agent session in the project answers it.
+    Ask {
+        id: String,
+        #[arg(required = true, num_args = 1..)]
+        question: Vec<String>,
+    },
+    /// Answer a question (for agents: one the user asked you). Answer from evidence and say where it comes from;
+    /// if you cannot tell, say so. `-` reads stdin.
+    Answer {
+        id: String,
+        #[arg(required = true, num_args = 1..)]
+        answer: Vec<String>,
+        /// Also record the answer as a decision.
+        #[arg(long)]
+        decide: bool,
+    },
     /// Still relevant: a check-in that resets the idle clock without counting as progress. Say why.
     Still {
         id: String,
@@ -888,6 +904,30 @@ fn run(cli: Cli) -> Result<()> {
             } else {
                 emit(json, &out, |out| print::pending(out.iter().map(|p| (p.project, p.report)), all_projects))?;
             }
+        }
+        Cmd::Ask { id, question } => {
+            let q = app.store.ask_agents(&app.caller, &id, &words(&question)?)?;
+            emit(json, &q, |q| {
+                println!("asked {} about {id}: the next agent session in this project will answer it", q.meta.id)
+            })?;
+        }
+        Cmd::Answer { id, answer, decide } => {
+            let (q, d) = app.store.answer(&app.caller, &id, &words(&answer)?, decide)?;
+            #[derive(Serialize)]
+            struct A<'a> {
+                item: &'a Item,
+                decision: &'a Option<String>,
+            }
+            emit(json, &A { item: &q, decision: &d }, |a| {
+                println!(
+                    "answered {}{}",
+                    a.item.meta.id,
+                    a.decision.as_ref().map(|d| format!("; recorded as {d}")).unwrap_or_default()
+                );
+                if let Some(about) = t9_core::ask::about_of(a.item) {
+                    println!("the answer is on {about} too; tell the user what you answered");
+                }
+            })?;
         }
         Cmd::Still { id, note } => {
             let item = app.store.item(&id)?;

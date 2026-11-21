@@ -207,6 +207,7 @@ pub fn build(store: &mut Store, caller: &Caller) -> Result<Brief> {
     let mut issues: Vec<Item> = all
         .iter()
         .filter(|i| i.meta.kind.is_issue() && !i.meta.status.is_closed() && !shown.contains(&i.meta.id))
+        .filter(|i| !crate::ask::is_for_agents(i))
         .cloned()
         .collect();
     issues.sort_by_key(|i| (i.meta.priority.unwrap_or(99), std::cmp::Reverse(i.meta.updated)));
@@ -524,14 +525,22 @@ pub fn render(b: &Brief, budget_tokens: usize) -> String {
         b.applicable.iter().map(|r| format!("{} [{}]", decision_with_why(&r.item), r.reasons.join("; "))),
         0,
     );
-    let mut attention: Vec<String> = b
-        .attention
-        .items
+    let asked: Vec<&crate::attention::Attention> = b.attention.items.iter().filter(|a| a.reason == "asked").collect();
+    w.section(
+        "Asked by the user (answer first, from evidence: `t9 answer ID \"…\"`; say so if you cannot tell)",
+        asked
+            .iter()
+            .take(3)
+            .map(|a| format!("- {} {}: {}", a.id, a.detail.trim_start_matches("the user "), first_line(&a.title, 160))),
+        asked.len().saturating_sub(3),
+    );
+    let others: Vec<&crate::attention::Attention> = b.attention.items.iter().filter(|a| a.reason != "asked").collect();
+    let mut attention: Vec<String> = others
         .iter()
         .take(6)
         .map(|a| format!("- {} {} [{}] {}: {}", a.id, a.kind, a.status, a.detail, first_line(&a.title, 110)))
         .collect();
-    let more = b.attention.items.len().saturating_sub(6);
+    let more = others.len().saturating_sub(6);
     if more > 0 {
         attention.push(format!("- … {more} more: `t9 pending`"));
     }

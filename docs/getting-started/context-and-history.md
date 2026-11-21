@@ -161,6 +161,7 @@ how its children turned out.
 
 | Reason | When |
 |---|---|
+| `asked` | the user asked the agents a question (`t9 ask`, or the web UI): always first |
 | `overdue`, `due-soon` | a `--due` date has passed, or is within 2 days |
 | `ripe` | what it waits on (`--after ID`, a `blocked-by` link) has closed since it was last touched; or an experiment's retry date has passed |
 | `loop` | the going-in-circles signals (`t9 insights`) |

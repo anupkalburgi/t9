@@ -735,3 +735,43 @@ fn goals_due_dates_ripe_work_and_timely_reminders() {
     let third = s.cmd(&s.root).args(["hook", "claude", "prompt"]).write_stdin(prompt).output().unwrap();
     assert!(!String::from_utf8_lossy(&third.stdout).contains("BIL-6"), "shown once");
 }
+
+#[test]
+fn the_user_asks_the_agents_and_the_next_session_answers() {
+    let s = Sandbox::new();
+    let repo = s.repo("bil", "git@github.com:acme/bil.git");
+    s.ok(&repo, &["project", "init", "--key", "BIL"]);
+    s.ok(&repo, &["add", "task", "Wave 3b merge", "-s", "done"]); // BIL-1
+
+    // A session is running; the user asks from the web (or the CLI) meanwhile.
+    let start = serde_json::json!({"session_id": "h1", "cwd": repo, "source": "startup"}).to_string();
+    s.cmd(&s.root).args(["hook", "claude", "session-start"]).write_stdin(start).output().unwrap();
+    let q = s.json(&repo, &["ask", "BIL-1", "What did the merge change for telecom?"]);
+    assert_eq!(q["id"], "BIL-2");
+    assert_eq!(q["tags"][0], "for-agents");
+
+    // The running session hears about it on the user's next message, once.
+    let prompt = serde_json::json!({"session_id": "h1", "cwd": repo, "prompt": "carry on"}).to_string();
+    let out = s.cmd(&s.root).args(["hook", "claude", "prompt"]).write_stdin(prompt.clone()).output().unwrap();
+    let out = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(out.contains("BIL-2 the user asked today about BIL-1") && out.contains("t9 answer"), "{out}");
+    let again = s.cmd(&s.root).args(["hook", "claude", "prompt"]).write_stdin(prompt).output().unwrap();
+    assert!(!String::from_utf8_lossy(&again.stdout).contains("BIL-2"));
+
+    // A new session sees it first in the brief, not among ordinary open questions.
+    let brief = s.ok(&repo, &["context"]);
+    assert!(brief.contains("## Asked by the user") && brief.contains("BIL-2 asked today about BIL-1"), "{brief}");
+    assert!(!brief.contains("## Open bugs, regressions, revisits, questions"), "{brief}");
+    assert_eq!(s.json(&repo, &["pending"])["items"][0]["reason"], "asked");
+
+    // The agent answers; the answer is on the question and on the item it is about.
+    let a = s.json(
+        &repo,
+        &["--agent", "claude-code", "answer", "BIL-2", "Nothing for telecom: R3-F touched Cedar only (reports/T2)"],
+    );
+    assert_eq!(a["item"]["status"], "done");
+    let shown = s.ok(&repo, &["show", "BIL-1"]);
+    assert!(shown.contains("BIL-2 (What did the merge change for telecom?): Nothing for telecom"), "{shown}");
+    assert!(s.json(&repo, &["pending"])["items"].as_array().unwrap().iter().all(|i| i["id"] != "BIL-2"));
+    assert!(!s.cmd(&repo).args(["answer", "BIL-1", "x"]).output().unwrap().status.success(), "only questions");
+}

@@ -14,6 +14,10 @@ interface you use.
 
 - The brief usually arrives automatically (SessionStart hook). If it did not, run `t9 context`.
 - Continue from **Last handoff** and **Current focus**. Mention the item ids you are picking up.
+- **Asked by the user** (in the brief, or a "t9 reminder" mid-session): questions the user asked the agents about
+  an item, from the web UI or `t9 ask`. Answer each from evidence (`t9 history`, the repo, git log, reports), citing
+  where it comes from: `t9 answer ID "…"`. If you cannot tell, answer that and say what would settle it. Tell the
+  user what you answered, then carry on with their request.
 - **Needs attention** lists what is overdue, due, ripe (what it waited on is done), waiting on the user, stale or
   going in circles. Tell the user about the ones that concern them in your first reply. Mid-session a hook may add
   "t9 reminder" lines when something new comes up: mention it briefly, then carry on with their request.

@@ -76,6 +76,8 @@ pub struct Story {
     pub children: Vec<Rollup>,
     /// The latest progress or finding, for work still open.
     pub latest: Option<Entry>,
+    /// Questions the user asked the agents about it, with their answers.
+    pub asked: Vec<crate::ask::Asked>,
 }
 
 /// Reads the closing note's meaning: `(class, why)`.
@@ -233,7 +235,9 @@ impl Store {
             }
         }
         for other in &all {
-            for l in other.meta.links.iter().filter(|l| l.to == item.meta.id && l.rel != "applies-to") {
+            for l in
+                other.meta.links.iter().filter(|l| l.to == item.meta.id && l.rel != "applies-to" && l.rel != "about")
+            {
                 led_to.push(LedTo {
                     id: other.meta.id.clone(),
                     title: Some(other.meta.title.clone()),
@@ -289,7 +293,12 @@ impl Store {
             .into_iter()
             .next()
         };
-        Ok(Story { goal: goal_of(&item, &by_id), outcome, led_to, children: groups, latest })
+        let asked = self
+            .asked(&key)?
+            .into_iter()
+            .filter(|a| a.about.as_deref() == Some(item.meta.id.as_str()) || a.id == item.meta.id)
+            .collect();
+        Ok(Story { goal: goal_of(&item, &by_id), outcome, led_to, children: groups, latest, asked })
     }
 }
 

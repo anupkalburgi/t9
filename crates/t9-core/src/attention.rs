@@ -37,6 +37,7 @@ pub struct Attention {
     /// Days overdue, until due, idle, or waiting, depending on the reason.
     pub days: i64,
     /// One short phrase: "overdue 3d (due Nov 17)", "ripe: QR-126 closed", "idle 6d".
+    /// (`asked`: the user asked the agents a question; severity 6.)
     pub detail: String,
     /// What to do about it, for agents.
     pub hint: &'static str,
@@ -56,7 +57,7 @@ pub struct AttentionReport {
 impl AttentionReport {
     /// Reasons worth interrupting for: shown to the agent mid-session, told to the user.
     pub fn reminders(&self) -> impl Iterator<Item = &Attention> {
-        self.items.iter().filter(|a| matches!(a.reason, "overdue" | "due-soon" | "ripe" | "waiting"))
+        self.items.iter().filter(|a| matches!(a.reason, "asked" | "overdue" | "due-soon" | "ripe" | "waiting"))
     }
     pub fn get(&self, id: &str) -> Option<&Attention> {
         self.items.iter().find(|a| a.id == id)
@@ -157,6 +158,19 @@ impl Store {
         for i in &items {
             let open = !i.meta.status.is_closed() && i.meta.status != Status::Accepted;
             let idle = days_since(touched(i));
+            // The user asked the agents something: first in line.
+            if open && crate::ask::is_for_agents(i) {
+                let about = crate::ask::about_of(i).unwrap_or("the project");
+                let about_t = by_id
+                    .get(about)
+                    .map(|a| format!(" ({})", crate::context::first_line(&a.meta.title, 50)))
+                    .unwrap_or_default();
+                let age = days_since(i.meta.created);
+                let when = if age == 0 { "today".to_string() } else { format!("{} ago", days_phrase(age)) };
+                out.push(mk(i, "asked", 6, age, format!("the user asked {when} about {about}{about_t}"),
+                    "answer from evidence (t9 history, the repo, git log, reports) with `t9 answer ID \"…\"`, citing where it comes from; if you cannot tell, answer so; tell the user, then carry on"));
+                continue;
+            }
             if open && let Some(due) = i.meta.due {
                 let left = (due - today).num_days();
                 if left < 0 {
