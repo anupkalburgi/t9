@@ -225,6 +225,10 @@ enum Cmd {
         #[arg(long, short = 'n', default_value_t = 200)]
         limit: usize,
     },
+    /// Are we going in circles? Flip-flopping decisions, reopened work, repeats of dead ends, spinning branches,
+    /// work that stays active without finishing.
+    #[command(alias = "loops")]
+    Insights,
     /// Datasets, tables, models, endpoints, services … recorded for this project.
     Resources {
         /// Only this type (dataset, model, endpoint, service, …).
@@ -1006,6 +1010,19 @@ fn run(cli: Cli) -> Result<()> {
             let mut events = app.store.timeline(&key, Some(now() - chrono::Duration::days(days)), topic.as_deref())?;
             events.truncate(limit);
             emit(json, &events, |e| print::timeline(e))?;
+        }
+        Cmd::Insights => {
+            let key = app.project_key()?;
+            let ins = app.store.insights(&key)?;
+            emit(json, &ins, |i| {
+                if i.signals.is_empty() {
+                    println!("no signs of going in circles");
+                }
+                for s in &i.signals {
+                    let level = ["", "·", "!", "!!"][s.severity.min(3) as usize];
+                    println!("{level:<2} {:<10} {}\n             {}", s.kind, s.title, s.detail);
+                }
+            })?;
         }
         Cmd::Resources { resource_type, all } => {
             let key = app.project_key()?;

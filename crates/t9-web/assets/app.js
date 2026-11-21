@@ -165,6 +165,7 @@ function setNav(active) {
   const q = open((i) => i.kind === "question");
   const links = [
     ["overview", "Overview", ""],
+    ["map", "Map", ""],
     ["plan", "Plan", open((i) => !["decision", "resource"].includes(i.kind))],
     ["questions", "Questions", q, q > 0],
     ["decisions", "Decisions", items.filter((i) => i.kind === "decision" && i.status === "accepted").length],
@@ -209,7 +210,7 @@ async function route() {
       if (state.key !== b || !state.items) { state.key = b; await loadItems(b); }
       const view = c || "overview";
       setNav(view.split("?")[0]); crumb(b);
-      const views = { overview: renderOverview, plan: renderPlan, questions: renderQuestions, decisions: renderDecisions, experiments: renderExperiments, resources: renderResources, timeline: renderTimeline, journal: renderJournal, about: renderAbout, search: renderSearch };
+      const views = { overview: renderOverview, map: renderMap, plan: renderPlan, questions: renderQuestions, decisions: renderDecisions, experiments: renderExperiments, resources: renderResources, timeline: renderTimeline, journal: renderJournal, about: renderAbout, search: renderSearch };
       return (views[view.split("?")[0]] || renderOverview)(b, view);
     }
     state.key = null; state.items = null; setNav(""); crumb(null);
@@ -254,6 +255,14 @@ async function renderOverview(key) {
     ...b.in_progress.filter((i) => i.status === "blocked").map((i) => row(i, "blocked")),
   ];
   if (waiting.length) grid.push(card("Waiting on you", waiting.length, `<div class="rows">${waiting.join("")}</div>`, "alert"));
+  try {
+    const ins = await api(`p/${key}/insights`);
+    if (ins.signals.length) {
+      const sev = (n) => ["", "low", "mid", "high"][n] || "low";
+      grid.push(card("Going in circles?", ins.signals.length, ins.signals.slice(0, 4).map((s) => `<div class="signal ${sev(s.severity)}"><strong>${esc(s.kind)}</strong> ${inline(s.title)}<div class="small muted">${inline(s.detail)}</div></div>`).join("") +
+        `<div class="more"><a href="#/p/${esc(key)}/map">See it on the map →</a></div>`, ins.signals.some((s) => s.severity >= 2) ? "alert" : ""));
+    }
+  } catch (e) { /* insights are optional on the overview */ }
   if (latestEntry) grid.push(card("Latest", null, entryRow(latestEntry, false)));
   if (b.handoff) grid.push(card(`Last handoff <span class="n">${esc(b.handoff.agent)} · ${esc(ago(b.handoff.meta?.at || b.handoff.at))}</span>`, null, `<div class="body">${md(b.handoff.body)}</div>`, "wide"));
   if (b.focus) grid.push(card("Agent is working on", null, `<div class="rows">${row(b.focus, esc(b.session?.agent || ""))}</div>`));
@@ -457,6 +466,154 @@ function renderItem(p) {
   if ($("#ansb")) act("#ansb", "#ansmsg", () => post(`item/${i.id}/answer`, { answer: $("#ans").value, decide: $("#asdec").checked }));
   act("#noteb", "#notemsg", () => post(`item/${i.id}/note`, { text: $("#note").value }));
   act("#stb", "#stmsg", () => post(`item/${i.id}/status`, { status: $("#st").value, note: $("#stn").value || null }));
+}
+
+
+// ---------------------------------------------------------------- map: the project at the centre
+
+const CATS = {
+  goal: "goal", active: "in progress", done: "done", dead: "dead end", issue: "open issue", question: "question",
+  tried: "tried", decision: "decision", idea: "idea", resource: "resource", open: "open",
+};
+function category(i) {
+  if (["failed", "inconclusive", "rejected", "dropped", "superseded"].includes(i.status)) return "dead";
+  if (i.status === "done") return "done";
+  if (i.status === "active") return "active";
+  if (i.kind === "decision") return i.status === "proposed" ? "question" : "decision";
+  if (["plan", "phase", "feature"].includes(i.kind)) return "goal";
+  if (["bug", "regression", "revisit"].includes(i.kind)) return "issue";
+  if (i.kind === "question") return "question";
+  if (i.kind === "experiment") return "tried";
+  if (i.kind === "idea") return "idea";
+  if (i.kind === "resource") return "resource";
+  return "open";
+}
+const PLURAL = {
+  goal: "goals", active: "in progress", done: "done", dead: "dead ends", issue: "open issues", question: "questions",
+  tried: "experiments", decision: "decisions", idea: "ideas", resource: "resources", open: "open tasks",
+};
+const mapState = { expanded: new Set(), scale: 1 };
+
+function buildMap(items, spinning) {
+  const ids = new Set(items.map((i) => i.id));
+  const kids = new Map();
+  for (const i of items) {
+    const p = i.parent && ids.has(i.parent) ? i.parent : "";
+    if (!kids.has(p)) kids.set(p, []);
+    kids.get(p).push(i);
+  }
+  const num = (id) => parseInt(id.split("-").pop(), 10);
+  const node = (i) => ({ item: i, cat: category(i), label: i.title, id: i.id, spinning: spinning.has(i.id), children: childrenOf(i.id, kids.get(i.id) || []) });
+  // Leaves are grouped into one pill per category unless the branch is expanded.
+  function childrenOf(pid, list) {
+    list = list.slice().sort((a, b) => (a.priority ?? 9) - (b.priority ?? 9) || num(a.id) - num(b.id));
+    const branches = list.filter((c) => (kids.get(c.id) || []).length).map(node);
+    const leaves = list.filter((c) => !(kids.get(c.id) || []).length);
+    const groups = new Map();
+    for (const l of leaves) { const c = category(l); if (!groups.has(c)) groups.set(c, []); groups.get(c).push(l); }
+    const out = [...branches];
+    const order = ["active", "question", "issue", "tried", "goal", "open", "decision", "idea", "resource", "dead", "done"];
+    for (const c of order) {
+      const g = groups.get(c);
+      if (!g) continue;
+      const key = pid + ":" + c;
+      if (g.length <= 2 || mapState.expanded.has(key)) {
+        out.push(...g.map((l) => ({ item: l, cat: c, label: l.title, id: l.id, children: [] })));
+        if (g.length > 2) out.push({ cluster: key, cat: c, label: `▴ collapse ${g.length}`, children: [], collapse: true });
+      } else {
+        out.push({ cluster: key, cat: c, label: `${g.length} ${PLURAL[c]}`, items: g, children: [] });
+      }
+    }
+    return out;
+  }
+  // The project's own branches: its plans and other top-level work, then loose decisions, experiments, ideas …
+  const top = kids.get("") || [];
+  const structural = top.filter((i) => (kids.get(i.id) || []).length || ["plan", "phase", "feature"].includes(i.kind));
+  const loose = top.filter((i) => !structural.includes(i));
+  const groupOf = (i) => (i.kind === "decision" ? "Decisions" : i.kind === "experiment" ? "Experiments" : i.kind === "idea" ? "Ideas" : i.kind === "resource" ? "Resources" : i.kind === "question" ? "Questions" : "Other work");
+  const synth = new Map();
+  for (const i of loose) { const g = groupOf(i); if (!synth.has(g)) synth.set(g, []); synth.get(g).push(i); }
+  const children = [...structural.map(node)];
+  for (const [g, list] of synth) children.push({ label: `${g} (${list.length})`, cat: "goal", synthetic: true, children: childrenOf("~" + g, list) });
+  return children;
+}
+
+function layoutSide(nodes, side, ROW, COL) {
+  let cursor = 0;
+  const place = (n, depth) => {
+    n.x = side * depth * COL;
+    if (!n.children.length) { n.y = cursor; cursor += ROW; return; }
+    n.children.forEach((c) => place(c, depth + 1));
+    n.y = (n.children[0].y + n.children[n.children.length - 1].y) / 2;
+  };
+  nodes.forEach((n) => { place(n, 1); cursor += ROW * 0.6; });
+  return cursor;
+}
+const leafCount = (n) => (n.children.length ? n.children.reduce((a, c) => a + leafCount(c), 0) : 1);
+
+async function renderMap(key) {
+  const [ins, proj] = await Promise.all([api(`p/${key}/insights`), api(`p/${key}/about`)]);
+  const spinning = new Set(ins.branches.filter((b) => b.spinning).map((b) => b.id));
+  const branches = buildMap(state.items, spinning);
+  // Balance branches between the two sides.
+  const right = [], left = [];
+  let r = 0, l = 0;
+  for (const b of branches.slice().sort((a, b) => leafCount(b) - leafCount(a))) {
+    if (r <= l) { right.push(b); r += leafCount(b); } else { left.push(b); l += leafCount(b); }
+  }
+  const order = (side) => branches.filter((b) => side.includes(b));
+  const ROW = 34, COL = 250, W = 210, H = 26;
+  const hr = layoutSide(order(right), 1, ROW, COL), hl = layoutSide(order(left), -1, ROW, COL);
+  const shift = (nodes, h) => { const walk = (n) => { n.y -= h / 2; n.children.forEach(walk); }; nodes.forEach(walk); };
+  shift(right, hr); shift(left, hl);
+  const all = [];
+  const walk = (n, parent) => { all.push([n, parent]); n.children.forEach((c) => walk(c, n)); };
+  const root = { x: 0, y: 0, label: proj.name, cat: "root", children: [] };
+  [...right, ...left].forEach((n) => walk(n, root));
+  const xs = all.map(([n]) => n.x), ys = all.map(([n]) => n.y);
+  const minX = Math.min(0, ...xs) - W, maxX = Math.max(0, ...xs) + W, minY = Math.min(0, ...ys) - 40, maxY = Math.max(0, ...ys) + 40;
+  const width = maxX - minX, height = maxY - minY;
+  const edge = ([n, p]) => {
+    const side = n.x >= 0 ? 1 : -1;
+    const x1 = p.x + (side * (p === root ? 120 : W)) / 2, y1 = p.y, x2 = n.x - (side * W) / 2, y2 = n.y, mx = (x1 + x2) / 2;
+    return `<path class="m-edge ${n.cat === "dead" ? "dead" : ""}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"/>`;
+  };
+  const short = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+  const nodeSvg = ([n]) => {
+    const tip = n.items ? n.items.slice(0, 15).map((i) => `${i.id} ${i.title}`).join("\n") + (n.items.length > 15 ? `\n… ${n.items.length - 15} more` : "") : n.item ? `${n.item.id} · ${n.item.kind} · ${n.item.status}\n${n.item.title}` : n.label;
+    const text = n.item ? `${n.item.id}  ${short(n.label, 24)}` : short(n.label, 30);
+    const attrs = n.item ? `data-go="${esc(n.item.id)}"` : n.cluster ? `data-cl="${esc(n.cluster)}"` : "";
+    const spin = n.spinning ? `<g class="m-spin"><circle cx="${n.x + W / 2 - 4}" cy="${n.y - H / 2 + 2}" r="9"/><text x="${n.x + W / 2 - 4}" y="${n.y - H / 2 + 6}" text-anchor="middle">↻</text></g>` : "";
+    return `<g class="m-node m-${n.cat} ${n.cluster ? "m-cluster" : ""} ${n.synthetic ? "m-synth" : ""}" ${attrs}><title>${esc(tip)}</title>` +
+      `<rect x="${n.x - W / 2}" y="${n.y - H / 2}" width="${W}" height="${H}" rx="13"/>` +
+      `<text x="${n.x}" y="${n.y + 4}" text-anchor="middle">${esc(text)}</text>${spin}</g>`;
+  };
+  const rootSvg = `<g class="m-node m-root"><rect x="-120" y="-20" width="240" height="40" rx="20"/><text x="0" y="5" text-anchor="middle">${esc(short(proj.name, 28))}</text></g>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${width} ${height}" width="${width * mapState.scale}" height="${height * mapState.scale}">` +
+    all.map(edge).join("") + all.map(nodeSvg).join("") + rootSvg + `</svg>`;
+
+  const sev = (n) => ["", "low", "mid", "high"][n] || "low";
+  const signals = ins.signals.length
+    ? ins.signals.slice(0, 8).map((s) => `<div class="signal ${sev(s.severity)}"><strong>${esc(s.kind)}</strong> ${inline(s.title)}<div class="small muted">${inline(s.detail)}</div></div>`).join("") +
+      (ins.signals.length > 8 ? `<div class="more">… ${ins.signals.length - 8} more (t9 insights)</div>` : "")
+    : '<div class="empty">No signs of going in circles: no flip-flopping decisions, reopened work, repeats of dead ends or spinning branches.</div>';
+  const legendCats = ["goal", "active", "done", "issue", "question", "tried", "dead", "decision", "idea"];
+  main().innerHTML = `<h1>Map</h1><p class="muted">The project at the centre; plans and features branch out. Leaves are grouped by outcome; click a group to open it, a node for its page. ↻ marks a branch that is spinning.</p>` +
+    `<section class="card ${ins.signals.some((s) => s.severity >= 2) ? "alert" : ""}"><h2>Are we going in circles?</h2>${signals}</section>` +
+    `<div class="toolbar"><span class="mlegend">${legendCats.map((c) => `<span class="m-key m-${c}"><i></i>${CATS[c]}</span>`).join("")}</span>` +
+    `<button id="zin">+</button><button id="zout">−</button><button id="zfit">fit</button><button id="mexp">expand all</button><button id="mcol">collapse all</button></div>` +
+    `<div class="mapwrap" id="mapwrap">${svg}</div>`;
+  const rerender = () => { const w = $("#mapwrap"); const sx = w.scrollLeft, sy = w.scrollTop; renderMap(key).then(() => { $("#mapwrap").scrollLeft = sx; $("#mapwrap").scrollTop = sy; }); };
+  document.querySelectorAll("[data-go]").forEach((g) => (g.onclick = () => (location.hash = "#/i/" + g.dataset.go)));
+  document.querySelectorAll("[data-cl]").forEach((g) => (g.onclick = () => { const k = g.dataset.cl; mapState.expanded.has(k) ? mapState.expanded.delete(k) : mapState.expanded.add(k); rerender(); }));
+  $("#zin").onclick = () => { mapState.scale = Math.min(2, mapState.scale * 1.2); rerender(); };
+  $("#zout").onclick = () => { mapState.scale = Math.max(0.3, mapState.scale / 1.2); rerender(); };
+  $("#zfit").onclick = () => { mapState.scale = Math.min(1, ($("#mapwrap").clientWidth - 10) / width); rerender(); };
+  $("#mexp").onclick = () => { state.items.forEach((i) => Object.keys(CATS).forEach((c) => mapState.expanded.add(i.id + ":" + c))); ["Decisions", "Experiments", "Ideas", "Resources", "Questions", "Other work"].forEach((g) => Object.keys(CATS).forEach((c) => mapState.expanded.add("~" + g + ":" + c))); rerender(); };
+  $("#mcol").onclick = () => { mapState.expanded.clear(); rerender(); };
+  // Centre the view on the project.
+  const w = $("#mapwrap");
+  if (!w.dataset.centered) { w.scrollLeft = (-minX * mapState.scale) - w.clientWidth / 2; w.scrollTop = (-minY * mapState.scale) - w.clientHeight / 2; w.dataset.centered = "1"; }
 }
 
 // ---------------------------------------------------------------- live refresh, search, keys

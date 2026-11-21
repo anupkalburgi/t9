@@ -42,7 +42,7 @@ t9 install agents-md   # adds the t9 section to ~/.codex/AGENTS.md (or --file PA
 ```sh
 cd ~/code/my-project
 t9 project init --name "My Project" --key MP   # once; worktrees and clones are found by git remote
-t9 web                                         # in your browser: overview, full plan, every item's story
+t9 web                                         # in your browser: overview, map, full plan, every item's story
 t9 tui                                         # the same in the terminal
 ```
 

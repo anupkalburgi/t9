@@ -41,6 +41,7 @@ Values:
 | `t9 triage` | `--days N` (default 14) |
 | `t9 about` | The project's About. `about add TEXT --section S`, `about set S TEXT` (`-` reads stdin), `about confirm`, `about edit`. Sections: what, goals, non-goals, architecture, stack, run, data, terms, constraints, links |
 | `t9 history TOPIC…` | Everything recorded about a topic, oldest first · `-A` all projects |
+| `t9 insights` | Signs of going in circles: flip-flopping decisions, reopened work, repeats of dead ends, spinning branches, stuck work (alias: `loops`) |
 | `t9 timeline` | Key events, newest first, by day · `--days N` (default 30) · `--topic T` · `-n N` |
 | `t9 resources` | Resources of this project · `--type T` · `-a` include dropped |
 | `t9 check WORDS…` | `-n N` (default 10). Decisions, rejections and ideas of any status matching any word, in this project and the global log |

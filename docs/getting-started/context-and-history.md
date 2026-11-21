@@ -120,3 +120,23 @@ t9 timeline --days 90 --topic "invoices"
 It lists what changed the project's course: work starting and finishing, decisions and rejections, experiment
 outcomes, blockers, findings, handoffs, and new plans, features, experiments, resources, bugs and questions. The
 TUI shows the last 60 days in tab **6 Timeline**.
+
+## Going in circles
+
+```sh
+t9 insights        # or: t9 loops
+```
+
+t9 looks at the project's history for signs that work is going round and round:
+
+| Signal | What it means |
+|---|---|
+| **flip-flop** | A decision changed two or more times (a supersede chain of three or more). |
+| **reopened** | Something was closed and then opened again. |
+| **repeat** | Open work (or a new decision) that resembles an earlier dead end: a failed or inconclusive experiment, a rejected option, a dropped item, a superseded decision. |
+| **spinning** | A branch of the plan with many entries in the last 7 days but nothing under it finished, or new issues opening faster than they close. |
+| **stuck** | Work active for 5 days or more, with many entries, and not finished. |
+
+The strongest signals appear in the agent's brief under "Watch out", on the web Overview, and above the web
+**Map**, which marks spinning branches with ↻ and dead ends with dashed red edges.
+

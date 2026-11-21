@@ -15,6 +15,7 @@ and waits if you are typing). Stop it with Ctrl-C.
 | Page | What you see |
 |---|---|
 | **Overview** | Waiting on you (questions, proposals, blocked work), the latest change, the last handoff, what the agent is working on, each plan with its progress, in progress, experiments, open issues, next tasks, decisions in force, resources, ruled-out options, ideas, recent activity. |
+| **Map** | The project at the centre, plans and features branching out, leaves grouped by outcome (in progress, open issues, questions, experiments, decisions, ideas, dead ends, done). Click a group to open it and a node for its page. Dead ends have dashed red edges; ↻ marks a spinning branch. Above it, **Are we going in circles?** (see [`t9 insights`](context-and-history.md#going-in-circles)). |
 | **Plan** | The whole tree (plan → phase → feature → task, with bugs, revisits, questions, ideas, experiments) with progress per branch, expand and collapse, filters by kind and text, and closed items on request. |
 | **Questions** | Open and answered questions, with when and by whom each was asked. |
 | **Decisions** | Every decision, rejection and change of mind, newest first. |

@@ -51,6 +51,7 @@ does its work and exits. A daemon (`t9 serve`) is planned for the UIs, not for c
 | `store.rs` | `Store`: the API every front end uses. Locking, atomic writes, sync, resolution, sessions, items, journal, attach/adopt. |
 | `context.rs` | Builds the brief (`Brief`) and renders it to a token budget. |
 | `about.rs` | The project's About: sections in the body of `project.md`, parse/render, `about_add`, `about_set`, `about_confirm`. |
+| `insights.rs` | `insights(project)`: signals of going in circles (flip-flops, reopened, repeats of dead ends, spinning branches, stuck work) and per-branch activity for the last 7 days. |
 | `history.rs` | `history(topic)` (everything on a topic, oldest first) and `timeline(project, since, topic)`, both as `Event`s. |
 | `unlinked.rs` | Folders where agents worked without a project: suggestions, the registry in `.state/unlinked.json`, once-per-session hints. |
 | `decisions.rs` | The decision log: `decide`/`reject`, ADR-shaped bodies, the GLOBAL project, recall by scope, area and text (`applicable_decisions`, `check`, `prompt_context`), the Markdown export. |

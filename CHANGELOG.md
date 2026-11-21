@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.6
+
+- **Map:** a new web page with the project at the centre and its plans, features and work branching out. Leaves
+  are grouped by outcome (in progress, open issues, questions, experiments, decisions, ideas, dead ends, done);
+  click a group to open it, a node for its page. Dead ends are drawn with dashed red edges; ↻ marks a spinning
+  branch. Zoom, fit, expand all and collapse all.
+- **Are we going in circles?** `t9 insights` (alias `loops`) and the Map and Overview pages flag decisions that
+  changed two or more times, work that was closed and reopened, new work that resembles an earlier dead end
+  (failed experiment, rejected option, dropped item, superseded decision), branches with lots of activity but
+  nothing finished or issues opening faster than they close, and work active for days without finishing.
+- The agent brief has a "Watch out: signs of going in circles" section, so agents notice too.
+
 ## 0.1.5
 
 - **Web UI:** `t9 web [ID]` opens a local browser UI: an overview, the full plan as a tree with progress and

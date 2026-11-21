@@ -10,6 +10,7 @@ pub mod frontmatter;
 pub mod git;
 pub mod history;
 pub mod index;
+pub mod insights;
 pub mod journal;
 pub mod model;
 pub mod store;

@@ -145,3 +145,40 @@ a.plain { color: var(--fg); }
 .two-lines { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
 .side .row { grid-template-columns: 14px 64px 70px minmax(0, 1fr); }
 .side .row .extra { grid-column: 4; }
+
+.mapwrap { border: 1px solid var(--line); border-radius: 10px; overflow: auto; height: calc(100vh - 330px); min-height: 420px; background: var(--card); }
+.mapwrap svg { display: block; font: 12px system-ui, sans-serif; }
+.m-edge { fill: none; stroke: var(--faint); stroke-width: 1.2; opacity: .7; }
+.m-edge.dead { stroke: var(--red); stroke-dasharray: 4 3; opacity: .6; }
+.m-node rect { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
+.m-node text { fill: var(--fg); pointer-events: none; }
+.m-node[data-go], .m-node[data-cl] { cursor: pointer; }
+.m-node[data-go]:hover rect, .m-node[data-cl]:hover rect { stroke-width: 3; }
+.m-root rect { fill: var(--accent); stroke: var(--accent); }
+.m-root text { fill: #fff; font-weight: 700; font-size: 14px; }
+.m-synth rect { stroke-dasharray: 3 3; }
+.m-cluster rect { stroke-width: 2.5; }
+.m-goal rect { stroke: var(--accent); fill: var(--accent-bg); }
+.m-active rect { stroke: var(--green); stroke-width: 3; }
+.m-done rect { fill: var(--green-bg); stroke: var(--green); }
+.m-dead rect { fill: var(--red-bg); stroke: var(--red); }
+.m-dead text { text-decoration: line-through; fill: var(--muted); }
+.m-cluster.m-dead text { text-decoration: none; fill: var(--red); }
+.m-issue rect { fill: var(--yellow-bg); stroke: var(--yellow); }
+.m-question rect { fill: var(--yellow-bg); stroke: var(--red); }
+.m-tried rect { fill: var(--purple-bg); stroke: var(--purple); }
+.m-idea rect { fill: var(--purple-bg); stroke: var(--purple); stroke-dasharray: 3 2; }
+.m-decision rect { fill: var(--cyan-bg); stroke: var(--cyan); }
+.m-resource rect { fill: var(--accent-bg); stroke: var(--accent); stroke-dasharray: 2 2; }
+.m-spin circle { fill: var(--red); } .m-spin text { fill: #fff; font-weight: 700; font-size: 12px; }
+.mlegend { display: inline-flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--muted); margin-right: 8px; }
+.m-key { display: inline-flex; align-items: center; gap: 5px; }
+.m-key i { width: 18px; height: 11px; border-radius: 6px; border: 1.5px solid var(--line); display: inline-block; background: var(--bg); }
+.m-key.m-goal i { border-color: var(--accent); background: var(--accent-bg); } .m-key.m-active i { border: 3px solid var(--green); }
+.m-key.m-done i { border-color: var(--green); background: var(--green-bg); } .m-key.m-dead i { border-color: var(--red); background: var(--red-bg); }
+.m-key.m-issue i { border-color: var(--yellow); background: var(--yellow-bg); } .m-key.m-question i { border-color: var(--red); background: var(--yellow-bg); }
+.m-key.m-tried i { border-color: var(--purple); background: var(--purple-bg); } .m-key.m-decision i { border-color: var(--cyan); background: var(--cyan-bg); }
+.m-key.m-idea i { border: 1.5px dashed var(--purple); background: var(--purple-bg); }
+.signal { border-left: 3px solid var(--line); padding: 4px 10px; margin: 6px 0; }
+.signal.high { border-color: var(--red); } .signal.mid { border-color: var(--yellow); } .signal.low { border-color: var(--faint); }
+.signal strong { text-transform: uppercase; font-size: 11px; letter-spacing: .04em; color: var(--muted); margin-right: 6px; }

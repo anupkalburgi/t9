@@ -70,6 +70,7 @@ pub fn route(store: &mut Store, m: &Method, segs: &[&str], params: &[(String, St
             Ok(serde_json::to_value(store.timeline(key, Some(now() - chrono::Duration::days(days)), topic)?)?)
         }
         (Method::Get, ["p", key, "sessions"]) => Ok(serde_json::to_value(store.sessions(Some(key), false, 200)?)?),
+        (Method::Get, ["p", key, "insights"]) => Ok(serde_json::to_value(store.insights(key)?)?),
         (Method::Get, ["p", key, "about"]) => Ok(serde_json::to_value(store.about(key)?)?),
         (Method::Get, ["p", key, "changes"]) => changes(store, key),
         (Method::Get, ["history"]) => {

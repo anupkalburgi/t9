@@ -114,6 +114,12 @@ fn web_api_end_to_end() {
     let d = json(http(port, "GET", "/api/item/BIL-3", &auth, ""));
     assert!(d["item"]["body"].as_str().unwrap().contains("Answer to BIL-2"));
 
+    // The map's signals.
+    let ins = json(http(port, "GET", "/api/p/BIL/insights", &auth, ""));
+    assert!(ins["signals"].is_array() && ins["branches"].is_array(), "{ins}");
+    let app = http(port, "GET", "/app.js", &auth, "");
+    assert!(app.status == 200 && app.body.contains("renderMap"));
+
     // Unknown items.
     assert_eq!(http(port, "GET", "/api/item/BIL-99", &auth, "").status, 404);
 }

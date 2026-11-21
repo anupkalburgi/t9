@@ -42,6 +42,7 @@ Before planning any non-trivial approach, and whenever the user asks "should we�
 ```sh
 t9 history "webhook batching"      # everything on the topic, oldest first
 t9 timeline --days 14              # what happened recently, and in what order
+t9 insights                        # are we going in circles? flip-flops, repeats of dead ends, spinning branches
 ```
 
 Build the plan from what comes back, and cite ids:
@@ -50,6 +51,8 @@ Build the plan from what comes back, and cite ids:
   passed retry date flagged as "worth retrying"); if it has, say so and propose the retry;
 - look for **ideas** that can be combined with what is known now;
 - mention dead ends the user may have forgotten.
+- if the brief has a **Watch out** section (or `t9 insights` shows signals), tell the user you may be going in
+  circles, name the ids, and suggest a different approach or a decision before going another round.
 
 ## Experiments
 
@@ -128,7 +131,7 @@ Structure big work as a tree with `--parent`: plan → phase → feature → tas
 
 - `t9 context` — the brief; `t9 ls --tree` — open items as a tree (`--all` includes closed)
 - `t9 decisions [--area A] [--global] [--md]` — the decision log; `t9 check "…"` — decided before?
-- `t9 history "…"` — everything on a topic; `t9 timeline` — what happened when; `t9 about`; `t9 resources`
+- `t9 history "…"` — everything on a topic; `t9 timeline` — what happened when; `t9 insights` — signs of going in circles; `t9 about`; `t9 resources`
 - `t9 show BIL-12` — an item with its children, links and journal
 - `t9 journal -n 20` — recent entries; `t9 search "…"` — full-text search (`-A` for all projects)
 - `t9 triage` — entries not filed under an item; `t9 attach ENTRY BIL-12` files one

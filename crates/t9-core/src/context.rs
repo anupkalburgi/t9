@@ -53,6 +53,8 @@ pub struct Brief {
     pub worth_retrying: Vec<Item>,
     /// Datasets, tables, models, endpoints, services … the project works with.
     pub resources: Vec<Item>,
+    /// Signs of going in circles (flip-flops, reopened work, repeats of dead ends, spinning branches).
+    pub signals: Vec<crate::insights::Signal>,
     pub recent: Vec<Entry>,
     pub unfiled: usize,
     pub inbox: usize,
@@ -117,6 +119,7 @@ pub fn build(store: &mut Store, caller: &Caller) -> Result<Brief> {
             experiments: vec![],
             worth_retrying: vec![],
             resources: vec![],
+            signals: vec![],
             recent: vec![],
             unfiled: 0,
             inbox,
@@ -300,6 +303,7 @@ pub fn build(store: &mut Store, caller: &Caller) -> Result<Brief> {
         experiments,
         worth_retrying,
         resources,
+        signals: store.insights(&key)?.signals,
         recent,
         unfiled,
         inbox,
@@ -499,6 +503,15 @@ pub fn render(b: &Brief, budget_tokens: usize) -> String {
         "Rules for every project (global)",
         b.global_rules.iter().take(6).map(decision_with_why),
         b.global_rules.len().saturating_sub(6),
+    );
+    w.section(
+        "Watch out: signs of going in circles (`t9 insights`)",
+        b.signals
+            .iter()
+            .filter(|s| s.severity >= 2)
+            .take(4)
+            .map(|s| format!("- [{}] {} ({})", s.kind, s.title, s.detail)),
+        b.signals.iter().filter(|s| s.severity >= 2).count().saturating_sub(4),
     );
     w.section("In progress", b.in_progress.iter().take(10).map(item_line), b.in_progress.len().saturating_sub(10));
     w.section(

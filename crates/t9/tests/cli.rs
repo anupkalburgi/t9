@@ -624,3 +624,43 @@ fn project_context_experiments_resources_history_and_timeline() {
     // Clearing a retry date.
     assert!(s.json(&repo, &["update", "BIL-3", "--retry-after", "none"])["retry_after"].is_null());
 }
+
+#[test]
+fn insights_flag_loops_flip_flops_and_repeats() {
+    let s = Sandbox::new();
+    let repo = s.repo("bil", "git@github.com:acme/bil.git");
+    s.ok(&repo, &["project", "init", "--key", "BIL"]);
+    s.ok(&repo, &["add", "feature", "Webhooks"]); // BIL-1
+    // A decision changed twice: BIL-2 → BIL-3 → BIL-4.
+    s.ok(&repo, &["decide", "Retry webhooks with a fixed delay"]);
+    s.ok(&repo, &["decide", "Retry webhooks with exponential backoff", "-s", "BIL-2"]);
+    s.ok(&repo, &["decide", "Retry webhooks with a fixed delay after all", "-s", "BIL-3"]);
+    // An experiment that failed, and new work that looks just like it.
+    s.ok(&repo, &["add", "experiment", "Batch webhook deliveries per merchant", "--parent", "BIL-1", "-s", "failed"]); // BIL-5
+    s.ok(&repo, &["add", "task", "Batch webhook deliveries per merchant again", "--parent", "BIL-1"]); // BIL-6
+    // Reopened: done, then open again.
+    s.ok(&repo, &["update", "BIL-6", "--status", "done"]);
+    s.ok(&repo, &["update", "BIL-6", "--status", "open"]);
+    // Issues piling up under the feature with nothing finished.
+    for n in 0..5 {
+        s.ok(&repo, &["add", "bug", &format!("Webhook signature mismatch case {n}"), "--parent", "BIL-1"]);
+    }
+
+    let ins = s.json(&repo, &["insights"]);
+    let kinds: Vec<&str> = ins["signals"].as_array().unwrap().iter().map(|x| x["kind"].as_str().unwrap()).collect();
+    for k in ["flip-flop", "reopened", "repeat", "spinning"] {
+        assert!(kinds.contains(&k), "{k} missing: {ins}");
+    }
+    let ff = ins["signals"].as_array().unwrap().iter().find(|x| x["kind"] == "flip-flop").unwrap();
+    assert_eq!(ff["detail"], "BIL-2 → BIL-3 → BIL-4");
+    let repeats: Vec<&Value> = ins["signals"].as_array().unwrap().iter().filter(|x| x["kind"] == "repeat").collect();
+    assert!(repeats.iter().any(|r| r["items"] == serde_json::json!(["BIL-6", "BIL-5"])), "{repeats:?}");
+    // Going back to a superseded decision is a repeat too.
+    assert!(repeats.iter().any(|r| r["items"] == serde_json::json!(["BIL-4", "BIL-2"])), "{repeats:?}");
+    assert!(ins["branches"].as_array().unwrap().iter().any(|b| b["id"] == "BIL-1" && b["spinning"] == true), "{ins}");
+
+    // The brief warns the agent; the text output is readable.
+    let brief = s.ok(&repo, &["context"]);
+    assert!(brief.contains("## Watch out: signs of going in circles"), "{brief}");
+    assert!(s.ok(&repo, &["loops"]).contains("Spinning: Webhooks"));
+}
