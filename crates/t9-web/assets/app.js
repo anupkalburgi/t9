@@ -125,7 +125,7 @@ const touched = (i) => i.touched || i.updated;
 function row(i, extra = "") {
   const isNew = state.newest && state.newest === i.id;
   return `<a class="row" href="#/i/${esc(i.id)}">${dot(touched(i))}<span class="id">${esc(i.id)}</span>${kind(i.kind)}` +
-    `<span class="title">${prio(i.priority)}${esc(i.title)}${isNew ? '<span class="new">NEW</span>' : ""}</span>` +
+    `<span class="title">${prio(i.priority)}${esc(i.title)}${isNew ? '<span class="new">NEW</span>' : ""}${freshBadge(freshOf(i))}</span>` +
     `<span class="extra">${extra}</span></a>`;
 }
 function rows(list, fmt, cap = 8, more) {
@@ -256,14 +256,15 @@ async function renderOverview(key) {
     ...b.in_progress.filter((i) => i.status === "blocked").map((i) => row(i, "blocked")),
   ];
   if (waiting.length) grid.push(card("Waiting on you", waiting.length, `<div class="rows">${waiting.join("")}</div>`, "alert"));
-  try {
-    const ins = await api(`p/${key}/insights`);
-    if (ins.signals.length) {
-      const sev = (n) => ["", "low", "mid", "high"][n] || "low";
-      grid.push(card("Going in circles?", ins.signals.length, ins.signals.slice(0, 4).map((s) => `<div class="signal ${sev(s.severity)}"><strong>${esc(s.kind)}</strong> ${inline(s.title)}<div class="small muted">${inline(s.detail)}</div></div>`).join("") +
-        `<div class="more"><a href="#/p/${esc(key)}/map">See it on the map →</a></div>`, ins.signals.some((s) => s.severity >= 2) ? "alert" : ""));
-    }
-  } catch (e) { /* insights are optional on the overview */ }
+  const att = b.attention || { items: [], backlog: 0 };
+  if (att.items.length || att.backlog) {
+    const byId = (a) => (state.items || []).find((x) => x.id === a.id) || a;
+    grid.push(card("Needs attention", att.items.length,
+      rows(att.items, (a) => row(byId(a), `<span title="${esc(a.detail)}">${esc(shortText(a.detail, 34))}</span>`), 10) +
+      (att.backlog ? `<div class="more">${att.backlog} open items untouched for 30+ days</div>` : "") +
+      `<div class="more">Agents see this list at the start of each session and get a reminder when something new comes up. <a href="#/p/${esc(key)}/map">Map →</a></div>`,
+      att.items.some((a) => a.severity >= 4) ? "alert" : ""));
+  }
   if (latestEntry) grid.push(card("Latest", null, entryRow(latestEntry, false)));
   if (b.handoff) grid.push(card(`Last handoff <span class="n">${esc(b.handoff.agent)} · ${esc(ago(b.handoff.meta?.at || b.handoff.at))}</span>`, null, `<div class="body">${md(b.handoff.body)}</div>`, "wide"));
   if (b.focus) grid.push(card("Agent is working on", null, `<div class="rows">${row(b.focus, esc(b.session?.agent || ""))}</div>`));
@@ -424,7 +425,7 @@ function renderItem(p) {
   fields.push(["File", `<span class="mono small faint">${esc(i.path)}</span>`]);
   const isOpen = !closedStatus(i.status);
   let mainCol = `<div class="chain">${chain || `<a href="#/p/${esc(i.project)}/plan">${esc(i.project)} plan</a>`}</div>` +
-    `<div class="item-head">${kind(i.kind)}<span class="mono faint">${esc(i.id)}</span>${status(i.status)}<a class="small" id="onmap" href="#/p/${esc(i.project)}/map">◎ show on the map</a></div><h1>${esc(i.title)}</h1>` +
+    `<div class="item-head">${kind(i.kind)}<span class="mono faint">${esc(i.id)}</span>${status(i.status)}<a class="small" id="onmap" href="#/p/${esc(i.project)}/map">◎ show on the map</a></div><h1>${esc(i.title)}</h1>` + storyHtml(p) +
     `<dl class="meta">${fields.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>` +
     (i.body.trim() ? `<div class="body">${md(i.body)}</div>` : "");
 
@@ -454,7 +455,7 @@ function renderItem(p) {
   const links = [...p.links.map((l) => ({ rel: l.rel, item: l.item, to: l.to })), ...p.backlinks.map((b) => ({ rel: "← " + b.rel, item: b.item }))];
   if (links.length) side += card("Links", links.length, `<div class="rows">${links.map((l) => l.item ? row(l.item, esc(l.rel)) : `<div class="row"><span></span><span class="id">${esc(l.to)}</span><span></span><span class="title faint">${esc(l.rel)} (missing)</span><span></span></div>`).join("")}</div>`);
   const statuses = i.kind === "decision" ? ["accepted", "proposed", "rejected", "superseded"] : i.kind === "experiment" ? ["open", "active", "done", "failed", "inconclusive", "dropped"] : ["open", "active", "blocked", "done", "dropped"];
-  side += card("Change status", null, `<select id="st">${statuses.map((x) => `<option ${x === i.status ? "selected" : ""}>${x}</option>`).join("")}</select> <input id="stn" type="text" placeholder="note (optional)" style="width:150px"> <button id="stb">Save</button> <span id="stmsg" class="small"></span>`);
+  side += card("Change status", null, `<select id="st">${statuses.map((x) => `<option ${x === i.status ? "selected" : ""}>${x}</option>`).join("")}</select> <input id="stn" type="text" placeholder="what came out of it / why" style="width:170px"> <button id="stb">Save</button> <span id="stmsg" class="small"></span>` + freshControls(i));
 
   main().innerHTML = `<div class="two"><div>${mainCol}</div><aside class="side">${side}</aside></div>`;
   const act = (btn, msg, fn) => {
@@ -472,9 +473,90 @@ function renderItem(p) {
   };
   if ($("#ansb")) act("#ansb", "#ansmsg", () => post(`item/${i.id}/answer`, { answer: $("#ans").value, decide: $("#asdec").checked }));
   act("#noteb", "#notemsg", () => post(`item/${i.id}/note`, { text: $("#note").value }));
-  act("#stb", "#stmsg", () => post(`item/${i.id}/status`, { status: $("#st").value, note: $("#stn").value || null }));
+  act("#stb", "#stmsg", () => saveStatus(i.id, $("#st").value, $("#stn").value));
+  storyActions(main(), i, async () => { state.items = null; await loadItems(i.project); route(); });
 }
 
+
+// ---------------------------------------------------------------- story: goal → outcome → led to
+
+const FRESH_LABEL = { overdue: "overdue", "due-soon": "due", ripe: "ripe", waiting: "waiting", stale: "idle", loop: "loop", unexplained: "no outcome" };
+function freshOf(i) {
+  return i.fresh || (state.items && state.items.find((x) => x.id === i.id)?.fresh) || null;
+}
+function freshBadge(f) {
+  if (!f) return "";
+  return `<span class="fb fb-${esc(f.reason)}" title="${esc(f.detail)}">${esc(f.reason === "overdue" || f.reason === "due-soon" || f.reason === "stale" ? f.detail.replace(/ \(due .*\)$/, "") : FRESH_LABEL[f.reason] || f.reason)}</span>`;
+}
+const OUTCOME_LABEL = { done: "done", merged: "merged", dead: "dead ends", partial: "inconclusive", open: "open" };
+const shortText = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + "…" : s || "");
+
+function storyHtml(p) {
+  const s = p.story, i = p.item;
+  const rowS = (label, body) => `<div class="st-row"><b>${label}</b><div>${body}</div></div>`;
+  const g = s.goal;
+  const setGoal = `<button class="linkbtn" data-setgoal="1">${g && g.source === "stated" ? "edit" : g ? "state it" : "add why"}</button>`;
+  const goal = !g
+    ? rowS("Goal", `<span class="faint">not recorded</span> ${setGoal}`)
+    : g.source === "stated"
+      ? rowS("Goal", `${inline(g.text)} ${setGoal}`)
+      : rowS("Goal", `<span class="inferred">${inline(g.text)}</span> <span class="chip-s">${g.source === "inherited" ? "inherited from" : "inferred from parent"} <a href="#/i/${esc(g.from)}">${esc(g.from)}</a></span> ${setGoal}`);
+  const o = s.outcome;
+  let outcome;
+  if (o.class === "open") {
+    const l = s.latest;
+    outcome = rowS("So far", l ? `<div class="two-lines" title="${esc(l.body)}"><span class="muted">${esc(l.kind)} ${esc(ago(l.at))}:</span> ${inline(shortText(l.body.split("\n")[0], 240))}</div>` : `<span class="faint">in progress, nothing recorded yet</span>`);
+  } else {
+    const why = o.why ? ` (${esc(o.why)})` : "";
+    const meta = [o.at ? esc(when(o.at)) : "", o.batch > 3 ? `closed in a batch of ${o.batch}` : ""].filter(Boolean).join(" · ");
+    outcome = rowS("Outcome", `<span class="oc oc-${esc(o.class)}">${esc(o.glyph)} ${esc(i.status)}${why}</span> ` +
+      (o.text ? inline(o.text) : `<span class="faint">closed without saying what came out of it</span>`) + (meta ? ` <span class="small muted">· ${meta}</span>` : ""));
+  }
+  const led = s.led_to.length
+    ? rowS("Led to", s.led_to.map((l) => `<span class="led"><span class="muted">${esc(l.how)}</span> <a href="#/i/${esc(l.id)}">${esc(l.id)}</a>${l.title ? ` <span class="small">${esc(shortText(l.title, 44))}</span>` : ""}</span>`).join(""))
+    : "";
+  const roll = s.children.length
+    ? rowS("Inside", s.children.map((c) => `<div class="roll"><span class="oc oc-${esc(c.class)}">${esc(c.glyph)} ${c.count} ${esc(OUTCOME_LABEL[c.class] || c.class)}</span>` +
+        (c.why.length ? ` <span class="small muted">${c.why.map(([w, n]) => `${n} ${esc(w)}`).join(", ")}</span>` : "") +
+        (c.example && c.class !== "open" ? ` <span class="small muted">“${inline(shortText(c.example, 110))}”</span>` : "") + `</div>`).join(""))
+    : "";
+  const f = i.fresh;
+  const now = f || i.due ? rowS("Now", `${freshBadge(f)} ${f ? esc(f.detail) : ""}${i.due && !(f && /due/.test(f.detail)) ? ` <span class="muted">due ${esc(i.due)}</span>` : ""}`) : "";
+  return `<section class="story">${goal}${outcome}${led}${roll}${now}</section>`;
+}
+
+// Goal, due date and check-in controls shared by the panel and the item page. `done` re-renders after a save.
+function storyActions(el, i, done) {
+  const wrap = el.querySelector(".story");
+  el.querySelectorAll("[data-setgoal]").forEach((b) => (b.onclick = () => {
+    const box = document.createElement("div");
+    box.className = "st-edit";
+    box.innerHTML = `<input type="text" id="goalin" placeholder="Why it exists: what it serves" value="${esc(i.goal || "")}"> <button id="goalsave" class="primary">Save goal</button>`;
+    wrap.appendChild(box);
+    $("#goalin").focus();
+    $("#goalsave").onclick = async () => { await post(`item/${i.id}/fields`, { goal: $("#goalin").value }); done(); };
+  }));
+  const due = el.querySelector("#duesave");
+  if (due) due.onclick = async () => {
+    try { await post(`item/${i.id}/fields`, { due: $("#duein").value }); done(); }
+    catch (e) { $("#duemsg").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  };
+  const still = el.querySelector("#stillb");
+  if (still) still.onclick = async () => {
+    const t = $("#stillin").value.trim();
+    if (!t) { $("#duemsg").innerHTML = '<span class="err">say why it is still relevant</span>'; return; }
+    await post(`item/${i.id}/still`, { text: t }); done();
+  };
+}
+const freshControls = (i) => closedStatus(i.status) ? "" :
+  `<div class="mp-act small"><input type="text" id="duein" placeholder="due: fri, 2026-12-01, 3d (empty clears)" value="${esc(i.due || "")}" style="width:210px"> <button id="duesave">Set due</button></div>` +
+  `<div class="mp-act small"><input type="text" id="stillin" placeholder="still relevant because…" style="width:210px"> <button id="stillb">Still relevant</button> <span id="duemsg"></span></div>`;
+
+// Closing needs a reason: it is the outcome.
+async function saveStatus(id, st, reason) {
+  if (closedStatus(st) && !reason.trim()) throw new Error("say what came out of it (the outcome) before closing");
+  return post(`item/${id}/status`, { status: st, note: reason.trim() || null });
+}
 
 // ---------------------------------------------------------------- map: the project at the centre
 
@@ -636,12 +718,15 @@ function drawMap() {
   const short = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
   const nodeSvg = ([n]) => {
     const tip = n.items ? n.items.slice(0, 15).map((i) => `${i.id} ${i.title}`).join("\n") + (n.items.length > 15 ? `\n… ${n.items.length - 15} more` : "") : n.item ? `${n.item.id} · ${n.item.kind} · ${n.item.status}\n${n.item.title}` : n.label;
-    const text = n.item ? `${n.item.id}  ${short(n.label, 24)}` : short(n.label, 30);
+    const og = n.item && n.item.outcome ? n.item.outcome.glyph + " " : "";
+    const text = n.item ? `${og}${n.item.id}  ${short(n.label, og ? 22 : 24)}` : short(n.label, 30);
+    const fr = n.item && n.item.fresh;
+    const frSvg = fr && fr.reason !== "unexplained" ? `<g class="m-fresh ${fr.severity >= 4 ? "hot" : ""}"><title>${esc(fr.detail)}</title><circle cx="${n.x - W / 2 + 4}" cy="${n.y - H / 2 + 2}" r="7"/><text x="${n.x - W / 2 + 4}" y="${n.y - H / 2 + 6}" text-anchor="middle">!</text></g>` : "";
     const attrs = n.item ? `data-go="${esc(n.item.id)}"` : n.cluster ? `data-cl="${esc(n.cluster)}"` : "";
     const spin = n.spinning ? `<g class="m-spin"><circle cx="${n.x + W / 2 - 4}" cy="${n.y - H / 2 + 2}" r="9"/><text x="${n.x + W / 2 - 4}" y="${n.y - H / 2 + 6}" text-anchor="middle">↻</text></g>` : "";
     return `<g data-k="${esc(keyOf(n))}" class="m-node m-${n.cat} ${n.cluster ? "m-cluster" : ""} ${n.synthetic ? "m-synth" : ""}" ${attrs}><title>${esc(tip)}</title>` +
       `<rect x="${n.x - W / 2}" y="${n.y - H / 2}" width="${W}" height="${H}" rx="13"/>` +
-      `<text x="${n.x}" y="${n.y + 4}" text-anchor="middle">${esc(text)}</text>${spin}</g>`;
+      `<text x="${n.x}" y="${n.y + 4}" text-anchor="middle">${esc(text)}</text>${spin}${frSvg}</g>`;
   };
   const rootSvg = `<g class="m-node m-root" data-root="1"><title>${esc(mapState.proj.name)}: click for the signs of going in circles</title><rect x="-120" y="-20" width="240" height="40" rx="20"/><text x="0" y="5" text-anchor="middle">${esc(short(mapState.proj.name, 28))}</text></g>`;
   w.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${width} ${height}" width="${width * sc}" height="${height * sc}">` +
@@ -725,7 +810,7 @@ async function renderPanel() {
   try { p = await api("item/" + encodeURIComponent(id)); } catch (e) { el.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
   if (mapState.sel !== id) return;
   const i = p.item;
-  const chain = p.chain.map((c) => `<a href="#/i/${esc(c.id)}">${esc(c.id)}</a>`).join(" › ");
+  const chain = p.chain.map((c) => `<a href="#/i/${esc(c.id)}">${esc(c.id)}</a> <span class="muted">${esc(shortText(c.title, 28))}</span>`).join(" › ");
   const closedKids = p.children.filter((c) => closedStatus(c.status)).length;
   const hist = p.entries.slice(-6).reverse();
   const isOpen = !closedStatus(i.status);
@@ -734,7 +819,7 @@ async function renderPanel() {
     `<div class="mp-top"><button id="mpx" title="back to the overview (Esc)">←</button><a class="go" href="#/i/${esc(i.id)}">open full page ↗</a></div>` +
     `<div class="chain">${chain ? chain + " › " : ""}<span class="mono">${esc(i.id)}</span></div>` +
     `<div class="item-head">${kind(i.kind)}${status(i.status)}${i.priority !== null && i.priority !== undefined ? prio(i.priority) : ""}<span class="small muted">${dot(i.touched)} ${esc(ago(i.touched))}</span></div>` +
-    `<h2 class="mp-title">${esc(i.title)}</h2>` +
+    `<h2 class="mp-title">${esc(i.title)}</h2>` + storyHtml(p) +
     `<p class="small muted">Created ${esc(when(i.created))} by ${esc(i.created_by || "?")}${p.since.entries ? ` · ${p.since.entries} entries in the project since` : ""}</p>` +
     (i.hypothesis ? `<p class="small"><strong>Hypothesis:</strong> ${inline(i.hypothesis)}</p>` : "") +
     (i.retry_when || i.retry_after ? `<p class="small"><strong>Retry:</strong> ${esc([i.retry_when && "when " + i.retry_when, i.retry_after && "after " + i.retry_after].filter(Boolean).join(" · "))}</p>` : "") +
@@ -743,7 +828,7 @@ async function renderPanel() {
     (p.children.length ? `<h3>Inside ${esc(i.id)} · ${closedKids}/${p.children.length} closed</h3>${progressBar(closedKids, p.children.length)}${rows(p.children.slice().sort((a, b) => closedStatus(a.status) - closedStatus(b.status)), (c) => row(c, closedStatus(c.status) ? status(c.status) : ""), 12)}` : "") +
     (p.applicable.length ? `<h3>From history</h3>${rows(p.applicable, (a) => row(a, esc(a.reasons.join("; "))), 5)}` : "") +
     `<h3>Latest on ${esc(i.id)}</h3>` + (hist.length ? `<div class="entries">${hist.map((e) => entryCompact(e)).join("")}</div>${p.entries.length > 6 ? `<div class="more"><a class="go" href="#/i/${esc(i.id)}">all ${p.entries.length} entries ↗</a></div>` : ""}` : '<div class="empty">No journal entries yet.</div>') +
-    `<h3>Change</h3><div class="mp-act"><select id="mpst">${statuses.map((x) => `<option ${x === i.status ? "selected" : ""}>${x}</option>`).join("")}</select> <button id="mpstb">Save status</button></div>` +
+    `<h3>Change</h3><div class="mp-act"><select id="mpst">${statuses.map((x) => `<option ${x === i.status ? "selected" : ""}>${x}</option>`).join("")}</select> <input type="text" id="mpreason" placeholder="what came out of it / why" style="width:180px"> <button id="mpstb">Save status</button></div>` + freshControls(i) +
     `<textarea id="mpnote" class="short" placeholder="A note on ${esc(i.id)}…"></textarea><button id="mpnoteb">Add note</button> <span id="mpmsg" class="small"></span>`;
   $("#mpx").onclick = () => selectNode(null);
   panelLinks(el);
@@ -755,7 +840,8 @@ async function renderPanel() {
     };
   };
   if ($("#mpansb")) act("#mpansb", "#mpmsg1", () => post(`item/${i.id}/answer`, { answer: $("#mpans").value, decide: $("#mpdec").checked }));
-  act("#mpstb", "#mpmsg", () => post(`item/${i.id}/status`, { status: $("#mpst").value, note: null }));
+  act("#mpstb", "#mpmsg", () => saveStatus(i.id, $("#mpst").value, $("#mpreason").value));
+  storyActions(el, i, async () => { await loadItems(state.key); drawMap(); renderPanel(); });
   act("#mpnoteb", "#mpmsg", () => post(`item/${i.id}/note`, { text: $("#mpnote").value }));
 }
 

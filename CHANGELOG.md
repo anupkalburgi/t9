@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.8
+
+- **Goal and outcome on every item.** `--goal "why"` on `add`, `update` and `focus` (recorded if the item has
+  none). Items without one show their nearest ancestor's goal, or their parent's title, labelled as inferred. The
+  outcome is the closing note (`t9 done ID -n "what came out of it"`), read as ✓ done, ⇢ combined into,
+  duplicate of or superseded, ✗ dropped, obsolete or failed, ~ inconclusive; the ids it names become "led to".
+- **Web: the story first.** The Map panel and every item page start with Goal, Outcome (or the latest progress),
+  Led to, how the children turned out, and why it needs attention. Closing from the web asks what came out of it
+  (it used to record no reason). Set a due date, say "still relevant", or state the goal from there.
+- **Due dates and waiting:** `--due fri|2026-12-01|3d` (set only when the user gives a date) and `--after ID`
+  (a `blocked-by` link: the item is *ripe* once ID closes).
+- **`t9 pending`** (alias `outstanding`, `--json` for agents): one ranked list of what needs attention: overdue,
+  due soon, ripe, going in circles, waiting on the user, stale, closed without an outcome; old backlog is only
+  counted. **`t9 still ID -n "…"`**: still relevant (a check-in that resets the idle clock, not progress).
+- **Reminders through the agent.** The brief's "Needs attention" now comes right after the focus (it was last,
+  so the budget cut it first) and tells the agent to mention what concerns the user. On each message the hook
+  adds a short "t9 reminder" when something new needs attention, once per item per day. `t9 done` says which
+  items are ripe now and suggests recording an outcome when there is none.
+- Web and TUI: "Needs attention" card and badges; outcome marks (✓ ⇢ ✗) and attention markers on the map.
+- The brief's "Watch out" and "Worth retrying" sections are now part of "Needs attention".
+- Index schema 5 (rebuilt automatically): the goal is searchable.
+
 ## 0.1.7
 
 - **Map:** explore without leaving it. Clicking a node opens it in a panel beside the map (description, what is

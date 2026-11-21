@@ -86,6 +86,8 @@ pub struct NewItem {
     pub areas: Vec<String>,
     pub links: Vec<Link>,
     pub status: Option<Status>,
+    pub goal: Option<String>,
+    pub due: Option<chrono::NaiveDate>,
     pub hypothesis: Option<String>,
     pub retry_when: Option<String>,
     pub retry_after: Option<chrono::NaiveDate>,
@@ -105,6 +107,9 @@ pub struct ItemPatch {
     pub remove_tags: Vec<String>,
     pub add_links: Vec<Link>,
     pub body: Option<String>,
+    /// `Some("")` clears the goal.
+    pub goal: Option<String>,
+    pub due: Option<Option<chrono::NaiveDate>>,
     /// Experiment and resource fields: `Some("")` clears a field.
     pub hypothesis: Option<String>,
     pub retry_when: Option<String>,
@@ -989,7 +994,7 @@ impl Store {
         if title.is_empty() {
             return Err(Error::Invalid("title is empty".into()));
         }
-        refuse_secrets([Some(&title), Some(&ni.body), ni.location.as_ref(), ni.owner.as_ref()])?;
+        refuse_secrets([Some(&title), Some(&ni.body), ni.location.as_ref(), ni.owner.as_ref(), ni.goal.as_ref()])?;
         let parent = match &ni.parent {
             Some(p) => Some(self.item(p)?),
             None => None,
@@ -1029,6 +1034,8 @@ impl Store {
             priority: ni.priority,
             tags: ni.tags,
             areas: normalize_areas(&ni.areas),
+            goal: clean_opt(ni.goal),
+            due: ni.due,
             hypothesis: clean_opt(ni.hypothesis),
             retry_when: clean_opt(ni.retry_when),
             retry_after: ni.retry_after,
@@ -1093,7 +1100,13 @@ impl Store {
             if let Some(p) = patch.priority {
                 meta.priority = p;
             }
-            refuse_secrets([patch.body.as_ref(), patch.location.as_ref(), Some(&meta.title)])?;
+            refuse_secrets([patch.body.as_ref(), patch.location.as_ref(), Some(&meta.title), patch.goal.as_ref()])?;
+            if let Some(v) = patch.goal {
+                meta.goal = clean_opt(Some(v));
+            }
+            if let Some(v) = patch.due {
+                meta.due = v;
+            }
             if let Some(v) = patch.hypothesis {
                 meta.hypothesis = clean_opt(Some(v));
             }

@@ -83,8 +83,8 @@ Then record the outcome:
 | Can't tell yet | `t9 status BIL-12 inconclusive -n "sandbox too small" --retry-when "staging data available"` |
 
 `--retry-after` takes a date (`2026-12-01`) or a delay (`30d`, `6w`, `3m`); `--retry-after none` clears it. A
-failed or inconclusive experiment whose retry date has passed is listed under **Worth retrying** in the brief and
-the TUI. Experiments are part of recall, so an agent about to try the same thing again is reminded of what
+failed or inconclusive experiment whose retry date has passed is listed as **ripe** under **Needs attention** in
+the brief, `t9 pending` and the TUI, until it is retried or checked in (`t9 still`). Experiments are part of recall, so an agent about to try the same thing again is reminded of what
 happened last time and why.
 
 ## History
@@ -137,6 +137,46 @@ t9 looks at the project's history for signs that work is going round and round:
 | **spinning** | A branch of the plan with many entries in the last 7 days but nothing under it finished, or new issues opening faster than they close. |
 | **stuck** | Work active for 5 days or more, with many entries, and not finished. |
 
-The strongest signals appear in the agent's brief under "Watch out", on the web Overview, and above the web
-**Map**, which marks spinning branches with ↻ and dead ends with dashed red edges.
+The strongest signals appear in the agent's brief and `t9 pending` under "Needs attention" (as `loop`), and in
+the web **Map** panel, which marks spinning branches with ↻ and dead ends with dashed red edges.
+
+## Goal and outcome
+
+Every item answers two questions:
+
+- **Goal**: why it exists, what it serves. Set it with `t9 add … --goal "…"`, `t9 focus ID --goal "…"` (recorded
+  if it has none) or `t9 update ID --goal "…"`. When an item has none, t9 shows its nearest ancestor's goal, or
+  its parent's title, labelled as inferred.
+- **Outcome**: what came out of it: the note you close it with, `t9 done ID -n "result; commits; what it led
+  to"`. t9 reads it: ✓ done, ⇢ combined into, duplicate of or superseded by another item, ✗ dropped, obsolete or
+  failed, ~ inconclusive; ids it names become "led to" links. Closing without a note works, but t9 suggests
+  recording one, and the item is listed as closed without an outcome for a week.
+
+The web UI shows both at the top of every item (panel and page), with what it led to and, for a feature or plan,
+how its children turned out.
+
+## What needs attention, and reminders
+
+`t9 pending` (and the brief's **Needs attention** section) is one ranked list:
+
+| Reason | When |
+|---|---|
+| `overdue`, `due-soon` | a `--due` date has passed, or is within 2 days |
+| `ripe` | what it waits on (`--after ID`, a `blocked-by` link) has closed since it was last touched; or an experiment's retry date has passed |
+| `loop` | the going-in-circles signals (`t9 insights`) |
+| `waiting` | a question open 2+ days; a proposed decision not accepted after 3+ days |
+| `stale` | active and untouched 3+ days; blocked and untouched 5+ days |
+| `unexplained` | closed in the last week without an outcome |
+
+Old open backlog (no priority, untouched 30+ days) is only counted. Ideas, revisits, resources and accepted
+decisions are never flagged for age. `t9 still ID -n "waiting on …"` says an item is still needed (it resets the
+idle clock without counting as progress); drop what is no longer needed.
+
+Set `--due` only when the user gives a date; use `--after ID` for "once X is done".
+
+**Reminders reach the user through the agent.** At session start the brief lists what needs attention and tells
+the agent to mention what concerns the user. On each message, a hook adds a short "t9 reminder" when something
+*new* comes up (it became due or overdue, it became ripe because another session closed what it waited on, a
+question has waited too long); each item and reason is shown once per session per day. `t9 done` also says which
+items are ripe now. In the web UI and TUI the same list is a "Needs attention" card, with badges on items.
 

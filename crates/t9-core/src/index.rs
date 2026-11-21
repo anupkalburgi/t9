@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter};
 use crate::model::*;
 use crate::{Error, Result};
 
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 const SCHEMA: &str = r#"
 CREATE TABLE projects(
@@ -25,7 +25,7 @@ CREATE INDEX project_remotes_remote ON project_remotes(remote);
 CREATE TABLE items(
   rid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, project TEXT NOT NULL, num INTEGER NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
   status TEXT NOT NULL, parent TEXT, priority INTEGER, updated TEXT NOT NULL,
-  meta TEXT NOT NULL, body TEXT NOT NULL, path TEXT NOT NULL
+  meta TEXT NOT NULL, body TEXT NOT NULL, path TEXT NOT NULL, goal TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX items_project ON items(project, status);
 CREATE INDEX items_parent ON items(parent);
@@ -56,20 +56,20 @@ CREATE INDEX files_project ON files(project);
 -- Full-text search: external-content FTS5 kept in sync by insert, update and delete triggers. Rows are written
 -- with a single `INSERT … ON CONFLICT DO UPDATE` (atomic, so concurrent writers never race) and never REPLACEd
 -- (REPLACE does not fire delete triggers).
-CREATE VIRTUAL TABLE items_fts USING fts5(title, body, content = 'items', content_rowid = 'rid', tokenize = 'porter unicode61');
+CREATE VIRTUAL TABLE items_fts USING fts5(title, body, goal, content = 'items', content_rowid = 'rid', tokenize = 'porter unicode61');
 CREATE TRIGGER items_ai AFTER INSERT ON items BEGIN
-  INSERT INTO items_fts(rowid, title, body) VALUES (new.rid, new.title, new.body);
+  INSERT INTO items_fts(rowid, title, body, goal) VALUES (new.rid, new.title, new.body, new.goal);
 END;
 CREATE TRIGGER items_ad AFTER DELETE ON items BEGIN
-  INSERT INTO items_fts(items_fts, rowid, title, body) VALUES ('delete', old.rid, old.title, old.body);
+  INSERT INTO items_fts(items_fts, rowid, title, body, goal) VALUES ('delete', old.rid, old.title, old.body, old.goal);
 END;
 CREATE TRIGGER items_au AFTER UPDATE ON items BEGIN
-  INSERT INTO items_fts(items_fts, rowid, title, body) VALUES ('delete', old.rid, old.title, old.body);
-  INSERT INTO items_fts(rowid, title, body) VALUES (new.rid, new.title, new.body);
+  INSERT INTO items_fts(items_fts, rowid, title, body, goal) VALUES ('delete', old.rid, old.title, old.body, old.goal);
+  INSERT INTO items_fts(rowid, title, body, goal) VALUES (new.rid, new.title, new.body, new.goal);
 END;
 CREATE VIRTUAL TABLE entries_fts USING fts5(body, content = 'entries', content_rowid = 'rid', tokenize = 'porter unicode61');
 -- Title matches weigh 4x body matches.
-INSERT INTO items_fts(items_fts, rank) VALUES ('rank', 'bm25(4.0, 1.0)');
+INSERT INTO items_fts(items_fts, rank) VALUES ('rank', 'bm25(4.0, 1.0, 2.0)');
 CREATE TRIGGER entries_ai AFTER INSERT ON entries BEGIN
   INSERT INTO entries_fts(rowid, body) VALUES (new.rid, new.body);
 END;
@@ -257,10 +257,10 @@ pub fn upsert_item(c: &Connection, it: &Item) -> Result<()> {
     let m = &it.meta;
     let num = split_item_id(&m.id).map(|(_, n)| n).unwrap_or(0);
     c.prepare_cached(
-        "INSERT INTO items(id, project, num, kind, title, status, parent, priority, updated, meta, body, path)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+        "INSERT INTO items(id, project, num, kind, title, status, parent, priority, updated, meta, body, path, goal)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
          ON CONFLICT(id) DO UPDATE SET project=?2, num=?3, kind=?4, title=?5, status=?6, parent=?7, priority=?8,
-           updated=?9, meta=?10, body=?11, path=?12",
+           updated=?9, meta=?10, body=?11, path=?12, goal=?13",
     )?
     .execute(params![
         m.id,
@@ -274,7 +274,8 @@ pub fn upsert_item(c: &Connection, it: &Item) -> Result<()> {
         ts(&m.updated),
         json(m),
         it.body,
-        it.path
+        it.path,
+        m.goal.as_deref().unwrap_or("")
     ])?;
     Ok(())
 }
@@ -429,6 +430,16 @@ pub fn count_entries(c: &Connection, f: &EntryFilter) -> Result<usize> {
         .prepare_cached(&format!("SELECT count(*) FROM entries{w}"))?
         .query_row(params_from_iter(args), |r| r.get(0))?;
     Ok(n as usize)
+}
+
+/// Newest journal entry per item in a project, in one query.
+/// Returns `(item, newest at, newest entry id)`.
+pub fn last_entry_per_item(c: &Connection, project: &str) -> Result<Vec<(String, String, String)>> {
+    let mut st = c.prepare_cached(
+        "SELECT item, max(at), max(id) FROM entries WHERE project = ? AND item IS NOT NULL GROUP BY item",
+    )?;
+    let rows = st.query_map([project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
 pub fn last_entry_at(c: &Connection, item: &str) -> Result<Option<String>> {

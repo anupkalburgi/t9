@@ -14,7 +14,7 @@ and waits if you are typing). Stop it with Ctrl-C.
 
 | Page | What you see |
 |---|---|
-| **Overview** | Waiting on you (questions, proposals, blocked work), the latest change, the last handoff, what the agent is working on, each plan with its progress, in progress, experiments, open issues, next tasks, decisions in force, resources, ruled-out options, ideas, recent activity. |
+| **Overview** | Waiting on you (questions, proposals, blocked work), Needs attention (overdue, due soon, ripe, stale, going in circles, closed without an outcome), the latest change, the last handoff, what the agent is working on, each plan with its progress, in progress, experiments, open issues, next tasks, decisions in force, resources, ruled-out options, ideas, recent activity. |
 | **Map** | The project at the centre, plans and features branching out, leaves grouped by outcome (in progress, open issues, questions, experiments, decisions, ideas, dead ends, done). Click a node and it opens in a panel beside the map, with its path back to the project highlighted: its description, what is inside it with progress, what applies from history, its latest entries, and buttons to change its status, add a note or answer a question. Ids in the panel select on the map, so you can explore without leaving it; double-click (or "open full page") for the full page, and "show on the map" on any item page brings you back to it. Click a group to open it; drag to move; ⌘-scroll to zoom; Esc deselects. Dead ends have dashed red edges; ↻ marks a spinning branch. With nothing selected the panel shows **Are we going in circles?** (see [`t9 insights`](context-and-history.md#going-in-circles)) and the busiest branches. |
 | **Plan** | The whole tree (plan → phase → feature → task, with bugs, revisits, questions, ideas, experiments) with progress per branch, expand and collapse, filters by kind and text, and closed items on request. |
 | **Questions** | Open and answered questions, with when and by whom each was asked. |
@@ -27,7 +27,17 @@ and waits if you are typing). Stop it with Ctrl-C.
 
 ## Item pages
 
-Every item ID anywhere in the UI is a link. An item's page shows:
+Every item ID anywhere in the UI is a link. Items that need attention carry a badge (`overdue 3 days`, `due
+today`, `ripe`, `idle 6d`, `waiting`, `loop`). An item's page, and the Map panel, start with its **story**:
+
+- **Goal**: why it exists (stated, or inferred from its parent, labelled so), with a button to state it;
+- **Outcome**: what came out of it, read from the closing note (✓ done, ⇢ combined or superseded, ✗ dropped or
+  failed, ~ inconclusive; batch closures are flagged), or for open work the latest progress;
+- **Led to**: links both ways, and the items the closing note names ("combined into QR-19");
+- **Inside**: for a feature or plan, how its children turned out, with an example note per group;
+- **Now**: why it needs attention, and its due date.
+
+Below the story, an item's page shows:
 
 - where it sits in the plan (its parent chain) and what is inside it, with progress;
 - its fields, its description, and its whole history (every journal entry about it);
@@ -36,7 +46,8 @@ Every item ID anywhere in the UI is a link. An item's page shows:
 - **what happened since**: how much was recorded afterwards, which items got the most attention, and the latest
   entries, so you can tell whether the agent moved on;
 - decisions, experiments and resources that apply to it, and links in both directions;
-- a form to change its status or add a note.
+- a form to change its status (closing asks what came out of it), set a due date, say it is still relevant, or
+  add a note.
 
 File paths mentioned in items and notes (for example `local/reports/…/options.md`) open as pages too, rendered if
 they are Markdown. Only files inside the project's folder are shown, read-only, never hidden or credential-like

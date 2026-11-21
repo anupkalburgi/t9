@@ -737,10 +737,18 @@ fn overview_columns(
     if b.inbox > 0 {
         attention.push(Line::from(format!("{} inbox entries from unlinked directories (tab 5)", b.inbox)));
     }
-    for i in &b.stale {
-        attention.push(row(app, i, w, false, "idle 3+ days"));
+    for a in &b.attention.items {
+        let color = if a.severity >= 4 { Color::Red } else { Color::Yellow };
+        attention.push(Line::from(vec![
+            Span::styled(format!("{:<8} ", a.id), Style::new().fg(Color::DarkGray)),
+            Span::styled(format!("{} ", a.detail), Style::new().fg(color)),
+            Span::raw(a.title.chars().take(w.saturating_sub(a.detail.len() + 12)).collect::<String>()),
+        ]));
     }
-    section(col, header("NEEDS ATTENTION", Some(attention.len()), Color::Yellow, ""), attention, 6);
+    if b.attention.backlog > 0 {
+        attention.push(Line::from(format!("{} open items untouched for 30+ days", b.attention.backlog)));
+    }
+    section(col, header("NEEDS ATTENTION", Some(attention.len()), Color::Yellow, "t9 pending"), attention, 8);
 
     if left.is_empty() && right.is_empty() {
         left.push(Line::from(Span::styled(

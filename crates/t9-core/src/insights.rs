@@ -173,7 +173,7 @@ impl Store {
             out
         };
         let mut stats: HashMap<String, (usize, usize, usize)> = HashMap::new();
-        for e in entries.iter().filter(|e| e.meta.at >= week_ago) {
+        for e in entries.iter().filter(|e| e.meta.at >= week_ago && e.meta.kind != EntryKind::Checkin) {
             if let Some(id) = &e.meta.item {
                 for a in std::iter::once(id.clone()).chain(ancestors(id)) {
                     stats.entry(a).or_default().0 += 1;
@@ -226,7 +226,7 @@ impl Store {
 
         // Stuck: active for a while, many entries, not finished.
         let mut entry_count: HashMap<&str, usize> = HashMap::new();
-        for e in &entries {
+        for e in entries.iter().filter(|e| e.meta.kind != EntryKind::Checkin) {
             if let Some(i) = e.meta.item.as_deref() {
                 *entry_count.entry(i).or_default() += 1;
             }

@@ -69,12 +69,19 @@ fn run_inner(store: &mut Store, caller: &Caller, cmd: HookCmd) -> Result<()> {
                 out.push_str("(The conversation was compacted. This is the current t9 brief for this project.)\n\n");
             }
             out.push_str(&context::render(&brief, budget));
+            // What the brief already listed is not repeated by the message hook today.
+            let harness = payload.session_id.clone().unwrap_or_else(|| "default".into());
+            for a in brief.attention.reminders() {
+                store.first_time_for(&reminder_key(a), &harness)?;
+            }
             out.push_str(
                 "\n---\nt9 is this project's shared memory. As you work: `t9 focus ID` (or `t9 add task \"…\" --focus`) \
                  when starting a unit of work; `t9 log \"…\"` after meaningful steps; `t9 add bug|regression|revisit|idea \"…\"` \
                  for problems, loose ends and ideas. Decisions: before proposing an approach or asking the user to choose, \
                  run `t9 check \"topic\"`; when the user decides or rules something out, record it at once with \
                  `t9 decide \"…\" --because \"…\" [-r \"alternative: why not\"] [--area A] [--for ID]` or `t9 reject \"…\"`. \
+                 Close work with its outcome: `t9 done ID -n \"what came out of it\"`. If \"Needs attention\" lists overdue, \
+                 due, ripe or waiting items, mention the ones that concern the user in your first reply. \
                  `t9 handoff \"…\"` before you stop. Use the t9 skill for details.\n",
             );
             print!("{out}");
@@ -95,6 +102,31 @@ fn run_inner(store: &mut Store, caller: &Caller, cmd: HookCmd) -> Result<()> {
                     );
                 }
             }
+            // Timely reminders: something became due, overdue, ripe or has waited too long since it was last
+            // shown in this session (each item and reason once per session per day).
+            if let Some(p) = store.resolve(&caller)?.project {
+                let harness = payload.session_id.clone().unwrap_or_else(|| "default".into());
+                let report = store.attention(&p.meta.key, None)?;
+                let mut lines = vec![];
+                for a in report.reminders() {
+                    if lines.len() < 3 && store.first_time_for(&reminder_key(a), &harness)? {
+                        lines.push(format!(
+                            "- {} {}: {} — {}",
+                            a.id,
+                            a.detail,
+                            t9_core::context::first_line(&a.title, 90),
+                            a.hint
+                        ));
+                    }
+                }
+                if !lines.is_empty() {
+                    println!(
+                        "t9 reminder (new since you last looked; mention it to the user briefly if it concerns them, \
+                         then carry on with their request):\n{}",
+                        lines.join("\n")
+                    );
+                }
+            }
             if let Some(text) =
                 t9_core::decisions::prompt_context(store, &caller, payload.prompt.as_deref().unwrap_or(""))?
             {
@@ -107,4 +139,9 @@ fn run_inner(store: &mut Store, caller: &Caller, cmd: HookCmd) -> Result<()> {
         other => anyhow::bail!("unknown Claude hook event '{other}' (expected session-start, prompt or session-end)"),
     }
     Ok(())
+}
+
+/// Once per item, reason and local day: a new day re-surfaces what is still overdue.
+fn reminder_key(a: &t9_core::attention::Attention) -> String {
+    format!("remind-{}-{}-{}", a.id, a.reason, chrono::Local::now().format("%Y%m%d"))
 }

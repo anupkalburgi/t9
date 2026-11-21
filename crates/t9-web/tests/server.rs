@@ -23,11 +23,32 @@ fn http(port: u16, method: &str, path: &str, headers: &[(&str, &str)], body: &st
     req.push_str("\r\n");
     req.push_str(body);
     s.write_all(req.as_bytes()).unwrap();
-    let mut raw = String::new();
-    s.read_to_string(&mut raw).unwrap();
-    let (head, body) = raw.split_once("\r\n\r\n").unwrap_or((&raw, ""));
+    let mut bytes = vec![];
+    s.read_to_end(&mut bytes).unwrap();
+    let split = bytes.windows(4).position(|w| w == b"\r\n\r\n").map_or(bytes.len(), |p| p + 4);
+    let head = String::from_utf8_lossy(&bytes[..split]).trim_end().to_string();
+    let mut body = bytes[split..].to_vec();
+    if head.to_ascii_lowercase().contains("transfer-encoding: chunked") {
+        body = dechunk(&body);
+    }
+    let body = String::from_utf8(body).unwrap_or_else(|e| panic!("{method} {path}: not UTF-8: {e}"));
     let status = head.split_whitespace().nth(1).unwrap().parse().unwrap();
-    Res { status, headers: head.to_string(), body: body.to_string() }
+    Res { status, headers: head, body }
+}
+
+/// Decodes a chunked HTTP body (large responses are sent in chunks; a chunk may end inside a UTF-8 character).
+fn dechunk(mut b: &[u8]) -> Vec<u8> {
+    let mut out = vec![];
+    while let Some(eol) = b.windows(2).position(|w| w == b"\r\n") {
+        let line = String::from_utf8_lossy(&b[..eol]).to_string();
+        let size = usize::from_str_radix(line.split(';').next().unwrap().trim(), 16).unwrap_or(0);
+        if size == 0 {
+            break;
+        }
+        out.extend_from_slice(&b[eol + 2..eol + 2 + size]);
+        b = &b[eol + 2 + size + 2..];
+    }
+    out
 }
 
 fn json(r: Res) -> serde_json::Value {
@@ -119,6 +140,35 @@ fn web_api_end_to_end() {
     assert!(ins["signals"].is_array() && ins["branches"].is_array(), "{ins}");
     let app = http(port, "GET", "/app.js", &auth, "");
     assert!(app.status == 200 && app.body.contains("renderMap"));
+
+    // The story: the question's goal is inferred from its parent; the answer is its outcome.
+    let page = json(http(port, "GET", "/api/item/BIL-2", &auth, ""));
+    assert_eq!(page["story"]["goal"]["source"], "parent", "{}", page["story"]);
+    assert_eq!(page["story"]["goal"]["from"], "BIL-1");
+    assert_eq!(page["story"]["outcome"]["class"], "done");
+    assert!(page["story"]["outcome"]["text"].as_str().unwrap().contains("recorded as BIL-3"), "{}", page["story"]);
+    assert!(page["story"]["led_to"].as_array().unwrap().iter().any(|l| l["id"] == "BIL-3"), "{}", page["story"]);
+
+    // A due date set from the web shows up as needing attention, on the item and in the list.
+    let f = json(http(
+        port,
+        "POST",
+        "/api/item/BIL-1/fields",
+        &hdrs,
+        r#"{"due":"2020-01-01","goal":"merchants hear about payments"}"#,
+    ));
+    assert_eq!((f["due"].as_str(), f["goal"].as_str()), (Some("2020-01-01"), Some("merchants hear about payments")));
+    let att = json(http(port, "GET", "/api/p/BIL/attention", &auth, ""));
+    assert_eq!(att["items"][0]["id"], "BIL-1", "{att}");
+    assert_eq!(att["items"][0]["reason"], "overdue");
+    let items = json(http(port, "GET", "/api/p/BIL/items", &auth, ""));
+    let b1 = items.as_array().unwrap().iter().find(|i| i["id"] == "BIL-1").unwrap();
+    assert_eq!(b1["fresh"]["reason"], "overdue");
+    let b2 = items.as_array().unwrap().iter().find(|i| i["id"] == "BIL-2").unwrap();
+    assert_eq!(b2["outcome"]["glyph"], "✓");
+    assert!(http(port, "POST", "/api/item/BIL-1/still", &hdrs, r#"{"text":" "}"#).body.contains("still relevant"));
+    let e = json(http(port, "POST", "/api/item/BIL-1/still", &hdrs, r#"{"text":"waiting for the provider"}"#));
+    assert_eq!(e["kind"], "checkin");
 
     // Unknown items.
     assert_eq!(http(port, "GET", "/api/item/BIL-99", &auth, "").status, 404);

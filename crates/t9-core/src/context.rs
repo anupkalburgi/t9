@@ -59,6 +59,10 @@ pub struct Brief {
     pub unfiled: usize,
     pub inbox: usize,
     pub stale: Vec<Item>,
+    /// What needs attention, ranked (`t9 pending`).
+    pub attention: crate::attention::AttentionReport,
+    /// The focus's goal: stated, inherited from an ancestor, or its parent's title.
+    pub focus_goal: Option<crate::story::Goal>,
 }
 
 const STALE_DAYS: i64 = 3;
@@ -124,6 +128,8 @@ pub fn build(store: &mut Store, caller: &Caller) -> Result<Brief> {
             unfiled: 0,
             inbox,
             stale: vec![],
+            attention: Default::default(),
+            focus_goal: None,
         });
     };
     let key = project.meta.key.clone();
@@ -284,7 +290,13 @@ pub fn build(store: &mut Store, caller: &Caller) -> Result<Brief> {
         }
     }
 
+    let signals = store.insights(&key)?.signals;
+    let attention = store.attention(&key, Some(&signals))?;
+    let by_id_map: std::collections::HashMap<&str, &Item> = all.iter().map(|i| (i.meta.id.as_str(), i)).collect();
+    let focus_goal = focus.as_ref().and_then(|f| crate::story::goal_of(f, &by_id_map));
     Ok(Brief {
+        attention,
+        focus_goal,
         resolution,
         session,
         handoff,
@@ -303,7 +315,7 @@ pub fn build(store: &mut Store, caller: &Caller) -> Result<Brief> {
         experiments,
         worth_retrying,
         resources,
-        signals: store.insights(&key)?.signals,
+        signals,
         recent,
         unfiled,
         inbox,
@@ -374,6 +386,9 @@ pub fn item_line(i: &Item) -> String {
         let _ = write!(s, " p{p}");
     }
     let _ = write!(s, " {}", i.meta.title);
+    if let Some(d) = i.meta.due.filter(|_| !i.meta.status.is_closed()) {
+        let _ = write!(s, " (due {})", d.format("%b %-d"));
+    }
     if let Some(p) = &i.meta.parent {
         let _ = write!(s, " (in {p})");
     }
@@ -491,6 +506,16 @@ pub fn render(b: &Brief, budget_tokens: usize) -> String {
     }
     if let Some(f) = &b.focus {
         let mut lines = vec![item_line(f)];
+        match &b.focus_goal {
+            Some(g) if g.source == "stated" => lines.push(format!("  goal: {}", first_line(&g.text, 200))),
+            Some(g) => lines.push(format!(
+                "  goal (inferred from {}; set it with `t9 update {} --goal \"…\"`): {}",
+                g.from.as_deref().unwrap_or("its parent"),
+                f.meta.id,
+                first_line(&g.text, 160)
+            )),
+            None => lines.push(format!("  goal: not recorded (`t9 update {} --goal \"…\"`)", f.meta.id)),
+        }
         lines.extend(f.body.lines().filter(|l| !l.trim().is_empty()).take(6).map(|l| format!("  {l}")));
         w.section("Current focus", lines, 0);
     }
@@ -499,30 +524,41 @@ pub fn render(b: &Brief, budget_tokens: usize) -> String {
         b.applicable.iter().map(|r| format!("{} [{}]", decision_with_why(&r.item), r.reasons.join("; "))),
         0,
     );
+    let mut attention: Vec<String> = b
+        .attention
+        .items
+        .iter()
+        .take(6)
+        .map(|a| format!("- {} {} [{}] {}: {}", a.id, a.kind, a.status, a.detail, first_line(&a.title, 110)))
+        .collect();
+    let more = b.attention.items.len().saturating_sub(6);
+    if more > 0 {
+        attention.push(format!("- … {more} more: `t9 pending`"));
+    }
+    if b.attention.backlog > 0 {
+        attention.push(format!("- {} open items untouched for 30+ days (`t9 pending`)", b.attention.backlog));
+    }
+    if b.unfiled > 0 {
+        attention.push(format!("- {} recent entries are not filed under an item (`t9 triage`)", b.unfiled));
+    }
+    if b.inbox > 0 {
+        attention.push(format!("- {} inbox entries from unlinked directories (`t9 triage`)", b.inbox));
+    }
+    w.section(
+        "Needs attention (tell the user about overdue, due, ripe and waiting items that concern them; `t9 pending`)",
+        attention,
+        0,
+    );
     w.section(
         "Rules for every project (global)",
         b.global_rules.iter().take(6).map(decision_with_why),
         b.global_rules.len().saturating_sub(6),
-    );
-    w.section(
-        "Watch out: signs of going in circles (`t9 insights`)",
-        b.signals
-            .iter()
-            .filter(|s| s.severity >= 2)
-            .take(4)
-            .map(|s| format!("- [{}] {} ({})", s.kind, s.title, s.detail)),
-        b.signals.iter().filter(|s| s.severity >= 2).count().saturating_sub(4),
     );
     w.section("In progress", b.in_progress.iter().take(10).map(item_line), b.in_progress.len().saturating_sub(10));
     w.section(
         "Experiments running",
         b.experiments.iter().take(5).map(decision_with_why),
         b.experiments.len().saturating_sub(5),
-    );
-    w.section(
-        "Worth retrying (retry date passed; check what made them fail)",
-        b.worth_retrying.iter().take(5).map(decision_with_why),
-        b.worth_retrying.len().saturating_sub(5),
     );
     for pv in &b.plans {
         let title = format!(
@@ -579,21 +615,6 @@ pub fn render(b: &Brief, budget_tokens: usize) -> String {
         b.resources.len().saturating_sub(10),
     );
     w.section("Recent activity", b.recent.iter().take(8).map(entry_line), 0);
-
-    let mut attention = vec![];
-    if b.unfiled > 0 {
-        attention.push(format!("- {} recent entries are not filed under an item (`t9 triage`)", b.unfiled));
-    }
-    if b.inbox > 0 {
-        attention.push(format!("- {} inbox entries from unlinked directories (`t9 triage`)", b.inbox));
-    }
-    for s in &b.stale {
-        attention.push(format!(
-            "- {} is active but has had no activity for {STALE_DAYS}+ days: {}",
-            s.meta.id, s.meta.title
-        ));
-    }
-    w.section("Needs attention", attention, 0);
 
     if w.truncated {
         w.out.push_str("\n(brief truncated to fit the budget; `t9 ls`, `t9 show ID`, `t9 search` for more)\n");

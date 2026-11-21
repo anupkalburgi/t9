@@ -24,7 +24,10 @@ Values:
 - **Statuses:** `open`, `active`, `blocked`, `done`, `dropped`, `proposed`, `accepted`, `rejected`, `superseded`,
   `failed`, `inconclusive`. `succeeded` is an alias of `done`.
   Aliases: `wip`, `doing`, `in-progress`, `closed`, `fixed`, `wontfix`, `cancelled`.
-- **Entry kinds:** `progress`, `note`, `blocker`, `finding`, `handoff`, `decision`, `status-change`.
+- **Entry kinds:** `progress`, `note`, `blocker`, `finding`, `handoff`, `decision`, `status-change`, `checkin`
+  (written by `t9 still`).
+- **Dates** (`--due`, `--retry-after`): `2026-12-01`, `today`, `tomorrow`, `mon`…`sun` (the next one, never
+  today), or a delay: `3d`, `2w`, `1m`; `none` clears.
 - **Links** are written `rel:ID`, where rel is one of `blocks`, `blocked-by`, `relates`, `regression-of`,
   `supersedes`, `superseded-by`, `duplicate-of`, `applies-to`.
 
@@ -33,6 +36,7 @@ Values:
 | Command | Options |
 |---|---|
 | `t9 context` | `--budget N`: approximate token budget (default 1500) |
+| `t9 pending` | What needs attention: overdue, due soon, ripe, waiting on the user, stale, going in circles, closed without an outcome · `-A` all projects · `-n N` (alias: `outstanding`) |
 | `t9 whereami` | |
 | `t9 ls` | `-k KIND`… · `-s STATUS`… · `-a/--all` include closed · `-t/--tree` · `--parent ID` · `-A/--all-projects` · `-n N` |
 | `t9 show ID` | `-n N` journal entries (default 15) |
@@ -56,12 +60,13 @@ Values:
 
 | Command | Options |
 |---|---|
-| `t9 add KIND TITLE…` | `--parent ID` · `--area A`… · experiments: `--hypothesis H` `--retry-when C` `--retry-after DATE` · resources: `--type T` `--at LOCATION` `--owner O` · `-b/--body TEXT` · `-t/--tag T`… · `-p/--priority 0-9` · `-s/--status S` · `-l/--link rel:ID`… · `-f/--focus` |
+| `t9 add KIND TITLE…` | `--parent ID` · `--goal WHY` · `--due WHEN` · `--after ID`… (waits on it) · `--area A`… · experiments: `--hypothesis H` `--retry-when C` `--retry-after DATE` · resources: `--type T` `--at LOCATION` `--owner O` · `-b/--body TEXT` · `-t/--tag T`… · `-p/--priority 0-9` · `-s/--status S` · `-l/--link rel:ID`… · `-f/--focus` |
 | `t9 log MESSAGE…` | `-k/--kind K` (default progress) · `-i/--item ID` (default: the focus) · `-r/--ref PATH`… |
-| `t9 focus ID` | `--no-activate` (don't move `open` to `active`) · `--clear` |
-| `t9 status ID STATUS` | `-n/--note TEXT` · `--retry-when C` · `--retry-after DATE` (a date, `30d`/`6w`/`3m`, or `none`) |
-| `t9 done ID` | `-n/--note TEXT` |
-| `t9 update ID` | `--area A`… · `--hypothesis` `--retry-when` `--retry-after` `--type` `--at` `--owner` · `--title` · `--status` · `--parent ID\|none` · `-p 0-9\|none` · `-t TAG`… · `--untag TAG`… · `-l rel:ID`… · `-b BODY` · `--rev N` (fail on conflict) · `-n NOTE` |
+| `t9 focus ID` | `--goal WHY` (recorded if it has none) · `--no-activate` (don't move `open` to `active`) · `--clear` |
+| `t9 status ID STATUS` | `-n/--note TEXT` (when closing: the outcome) · `--due` `--goal` `--after` · `--retry-when C` · `--retry-after DATE` (a date, `30d`/`6w`/`3m`, or `none`) |
+| `t9 done ID` | `-n/--note TEXT` (alias `--outcome`): what came out of it. Without one, t9 suggests recording it; items that waited on this one are listed as ripe |
+| `t9 still ID -n WHY` | Still relevant: a check-in that resets the idle clock without counting as progress |
+| `t9 update ID` | `--goal WHY` · `--due WHEN\|none` · `--after ID`… · `--area A`… · `--hypothesis` `--retry-when` `--retry-after` `--type` `--at` `--owner` · `--title` · `--status` · `--parent ID\|none` · `-p 0-9\|none` · `-t TAG`… · `--untag TAG`… · `-l rel:ID`… · `-b BODY` · `--rev N` (fail on conflict) · `-n NOTE` |
 | `t9 decide TITLE…` | `-w/--because WHY` · `-r/--rejected "option: why not"`… · `--area A`… · `--for ID`… (applies to that item and below) · `-s/--supersedes ID`… · `--proposed` · `-g/--global` · `-b/--body NOTES` · `--parent ID` |
 | `t9 reject TITLE…` | The same options as `decide` (except `-s`, `--proposed`); records a `rejected` decision |
 | `t9 handoff MESSAGE…` | |

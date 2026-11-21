@@ -107,6 +107,8 @@ string_enum!(
         Handoff => "handoff",
         Decision => "decision",
         StatusChange => "status-change" | "status",
+        // "Still relevant" (`t9 still`): resets the idle clock without counting as progress.
+        Checkin => "checkin" | "check-in" | "still",
     }
 );
 
@@ -273,6 +275,12 @@ pub struct ItemMeta {
     /// Topics such as `architecture`, `testing`, `storage`. Decisions are recalled by area.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub areas: Vec<String>,
+    /// Why it exists: what it serves. Shown with the item; inherited by children that have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal: Option<String>,
+    /// When the human wants it done (a local date).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due: Option<chrono::NaiveDate>,
     /// Experiments: what is being tested.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hypothesis: Option<String>,

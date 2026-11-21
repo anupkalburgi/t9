@@ -14,6 +14,9 @@ interface you use.
 
 - The brief usually arrives automatically (SessionStart hook). If it did not, run `t9 context`.
 - Continue from **Last handoff** and **Current focus**. Mention the item ids you are picking up.
+- **Needs attention** lists what is overdue, due, ripe (what it waited on is done), waiting on the user, stale or
+  going in circles. Tell the user about the ones that concern them in your first reply. Mid-session a hook may add
+  "t9 reminder" lines when something new comes up: mention it briefly, then carry on with their request.
 - Respect **Decisions that apply to your focus**, **Rules for every project** and **Ruled out**. Do not re-open
   them unless the user does or you have new information; if you do, say which decision you are questioning.
 - If the brief says the folder is **not linked to a t9 project**, say so to the user in your **first reply**,
@@ -51,7 +54,7 @@ Build the plan from what comes back, and cite ids:
   passed retry date flagged as "worth retrying"); if it has, say so and propose the retry;
 - look for **ideas** that can be combined with what is known now;
 - mention dead ends the user may have forgotten.
-- if the brief has a **Watch out** section (or `t9 insights` shows signals), tell the user you may be going in
+- if **Needs attention** lists a `loop` (or `t9 insights` shows signals), tell the user you may be going in
   circles, name the ids, and suggest a different approach or a decision before going another round.
 
 ## Experiments
@@ -101,14 +104,16 @@ Write a few entries per hour of work, not one per tool call. One or two sentence
 
 | When | Command |
 |---|---|
-| Starting a unit of work | `t9 focus BIL-12` (prints the decisions, experiments and resources that apply), or `t9 add task "…" --parent BIL-3 --focus` |
+| Starting a unit of work | `t9 focus BIL-12 --goal "why: what it serves"` (prints what applies), or `t9 add task "…" --parent BIL-3 --goal "…" --focus` |
 | A meaningful step, result or finding | `t9 log "…"` (attaches to the focus; `-r path` for files, commits, run folders) |
 | You find a bug | `t9 add bug "…" [-l regression-of:BIL-9] [-p 1]` |
 | Something worked before and broke | `t9 add regression "…" -l regression-of:BIL-9` |
 | "We should come back to this" / a loose end | `t9 add revisit "…"` |
 | A question only the human can answer | `t9 add question "Short question?" -b -` with the options, their trade-offs and your recommendation in the body (not in the title), plus where the evidence is (`-r` or a path) |
-| Blocked | `t9 status BIL-12 blocked -n "waiting on …"` |
-| Finished | `t9 done BIL-12 -n "how it was verified"` |
+| Blocked, or to do after something else | `t9 status BIL-12 blocked -n "waiting on …"`; `--after BIL-9` makes it come back as ripe when BIL-9 closes |
+| The user gives a deadline or says "remind me" | `--due fri` (or `2026-12-01`, `3d`); `--after ID` for "once X is done". Never invent a due date |
+| Still needed, but not touched for a while | `t9 still BIL-12 -n "waiting on …"`; no longer needed: `t9 status BIL-12 dropped -n "why"` |
+| Finished | `t9 done BIL-12 -n "what came out of it: result, commits, what it led to"` |
 
 Structure big work as a tree with `--parent`: plan → phase → feature → task. Give features and tasks an
 `--area` so decisions in that area are recalled when they are focused.
@@ -129,7 +134,7 @@ Structure big work as a tree with `--parent`: plan → phase → feature → tas
 
 ## Reading
 
-- `t9 context` — the brief; `t9 ls --tree` — open items as a tree (`--all` includes closed)
+- `t9 pending` — everything that needs attention (`--json` for you); `t9 context` — the brief; `t9 ls --tree` — open items as a tree (`--all` includes closed)
 - `t9 decisions [--area A] [--global] [--md]` — the decision log; `t9 check "…"` — decided before?
 - `t9 history "…"` — everything on a topic; `t9 timeline` — what happened when; `t9 insights` — signs of going in circles; `t9 about`; `t9 resources`
 - `t9 show BIL-12` — an item with its children, links and journal

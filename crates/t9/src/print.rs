@@ -442,3 +442,47 @@ pub fn doctor(store: &mut Store, json: bool) -> Result<()> {
     }
     Ok(())
 }
+
+pub fn pending<'a>(reports: impl Iterator<Item = (&'a str, &'a t9_core::attention::AttentionReport)>, all: bool) {
+    let mut any = false;
+    for (key, r) in reports {
+        if r.items.is_empty() && r.backlog == 0 {
+            continue;
+        }
+        any = true;
+        if all {
+            println!("\n{key}");
+        }
+        let mut reason = "";
+        for a in &r.items {
+            if a.reason != reason {
+                reason = a.reason;
+                let title = match reason {
+                    "overdue" => "overdue",
+                    "due-soon" => "due soon",
+                    "ripe" => "ripe (what it waited on is done, or worth retrying)",
+                    "loop" => "going in circles",
+                    "waiting" => "waiting on the user",
+                    "stale" => "stale",
+                    "unexplained" => "closed without an outcome",
+                    other => other,
+                };
+                println!("\n{title}");
+            }
+            println!(
+                "  {:<8} {:<9} {:<8} {:<34} {}",
+                a.id,
+                a.kind.as_str(),
+                a.status.as_str(),
+                first_line(&a.detail, 34),
+                first_line(&a.title, 80)
+            );
+        }
+        if r.backlog > 0 {
+            println!("\n{} open items untouched for 30+ days", r.backlog);
+        }
+    }
+    if !any {
+        println!("nothing needs attention");
+    }
+}

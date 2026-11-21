@@ -6,6 +6,8 @@ connects Claude Code to it:
 - **SessionStart hook**: prints the t9 brief for the current directory's project (last handoff, current
   focus, plan outline, open bugs/regressions/revisits, current decisions, recent activity) at startup, resume,
   `/clear` and after compaction, and registers a t9 session for this conversation.
+- **UserPromptSubmit hook**: on each message, recalls earlier decisions that bear on it, and adds a short
+  reminder when something new needs attention (due, overdue, ripe, waiting on the user), once per item per day.
 - **SessionEnd hook**: closes that session.
 - **t9 skill**: tells Claude when to record work with the `t9` CLI: focus, progress, bugs, revisits,
   decisions and handoffs.

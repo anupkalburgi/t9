@@ -17,6 +17,51 @@ struct ItemOut {
     item: Item,
     /// When the item last changed: its own update or its newest journal entry.
     touched: Timestamp,
+    /// Why it needs attention, if it does: overdue, due-soon, ripe, waiting, stale, loop, unexplained.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fresh: Option<Fresh>,
+    /// For closed items: done ✓, merged ⇢, dead ✗, partial ~.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    outcome: Option<OutcomeOut>,
+}
+
+#[derive(Serialize, Clone)]
+struct Fresh {
+    reason: &'static str,
+    detail: String,
+    severity: u8,
+}
+
+#[derive(Serialize, Clone)]
+struct OutcomeOut {
+    class: &'static str,
+    glyph: &'static str,
+    why: Option<&'static str>,
+    note: Option<String>,
+}
+
+/// Attention and outcome per item, for badges and map glyphs.
+struct Marks {
+    fresh: HashMap<String, Fresh>,
+    outcome: HashMap<String, OutcomeOut>,
+}
+
+fn marks(store: &mut Store, key: &str, items: &[Item]) -> Result<Marks> {
+    let signals = store.insights(key)?.signals;
+    let att = store.attention(key, Some(&signals))?;
+    let fresh = att
+        .items
+        .into_iter()
+        .map(|a| (a.id, Fresh { reason: a.reason, detail: a.detail, severity: a.severity }))
+        .collect();
+    let closings = store.closings(key)?;
+    let mut outcome = HashMap::new();
+    for i in items.iter().filter(|i| i.meta.status.is_closed()) {
+        let note = closings.get(&i.meta.id).and_then(|c| c.note.clone());
+        let (class, why) = t9_core::story::classify(i.meta.status, note.as_deref().unwrap_or(""));
+        outcome.insert(i.meta.id.clone(), OutcomeOut { class, glyph: t9_core::story::glyph(class), why, note });
+    }
+    Ok(Marks { fresh, outcome })
 }
 
 fn param<'a>(params: &'a [(String, String)], key: &str) -> Option<&'a str> {
@@ -48,7 +93,14 @@ fn touched_map(store: &Store, project: &str) -> Result<HashMap<String, Timestamp
 
 fn out(i: Item, touched: &HashMap<String, Timestamp>) -> ItemOut {
     let t = touched.get(&i.meta.id).copied().map_or(i.meta.updated, |t| t.max(i.meta.updated));
-    ItemOut { item: i, touched: t }
+    ItemOut { item: i, touched: t, fresh: None, outcome: None }
+}
+
+fn out_marked(i: Item, touched: &HashMap<String, Timestamp>, m: &Marks) -> ItemOut {
+    let mut o = out(i, touched);
+    o.fresh = m.fresh.get(&o.item.meta.id).cloned();
+    o.outcome = m.outcome.get(&o.item.meta.id).cloned();
+    o
 }
 
 fn committed(store: &mut Store) {
@@ -71,6 +123,10 @@ pub fn route(store: &mut Store, m: &Method, segs: &[&str], params: &[(String, St
         }
         (Method::Get, ["p", key, "sessions"]) => Ok(serde_json::to_value(store.sessions(Some(key), false, 200)?)?),
         (Method::Get, ["p", key, "insights"]) => Ok(serde_json::to_value(store.insights(key)?)?),
+        (Method::Get, ["p", key, "attention"]) => {
+            let signals = store.insights(key)?.signals;
+            Ok(serde_json::to_value(store.attention(key, Some(&signals))?)?)
+        }
         (Method::Get, ["p", key, "about"]) => Ok(serde_json::to_value(store.about(key)?)?),
         (Method::Get, ["p", key, "changes"]) => changes(store, key),
         (Method::Get, ["history"]) => {
@@ -117,6 +173,46 @@ pub fn route(store: &mut Store, m: &Method, segs: &[&str], params: &[(String, St
             Ok(serde_json::to_value(e)?)
         }
         (Method::Post, ["item", id, "answer"]) => answer(store, id, body),
+        (Method::Post, ["item", id, "fields"]) => {
+            #[derive(Deserialize)]
+            struct B {
+                goal: Option<String>,
+                /// `YYYY-MM-DD`, `today`, `fri`, `3d` …; empty clears.
+                due: Option<String>,
+            }
+            let b: B = serde_json::from_str(body)?;
+            let due = match b.due.as_deref().map(str::trim) {
+                None => None,
+                Some("") => Some(None),
+                Some(d) => Some(Some(
+                    t9_core::attention::parse_when(d, chrono::Local::now().date_naive())
+                        .map_err(|e| anyhow::anyhow!(e))?,
+                )),
+            };
+            let it = store.item(id)?;
+            let caller = human(store, &it.project);
+            let i = store.update_item(&caller, id, ItemPatch { goal: b.goal, due, ..Default::default() })?;
+            committed(store);
+            Ok(serde_json::to_value(i)?)
+        }
+        (Method::Post, ["item", id, "still"]) => {
+            #[derive(Deserialize)]
+            struct B {
+                text: String,
+            }
+            let b: B = serde_json::from_str(body)?;
+            if b.text.trim().is_empty() {
+                bail!("say why it is still relevant");
+            }
+            let it = store.item(id)?;
+            let caller = human(store, &it.project);
+            let e = store.log(
+                &caller,
+                LogInput { kind: EntryKind::Checkin, body: b.text, item: Some(it.meta.id), refs: vec![] },
+            )?;
+            committed(store);
+            Ok(serde_json::to_value(e)?)
+        }
         (Method::Post, ["p", key, "decide"]) => {
             #[derive(Deserialize)]
             struct B {
@@ -196,7 +292,8 @@ fn items(store: &mut Store, key: &str) -> Result<Value> {
     store.sync_project(key)?;
     let touched = touched_map(store, key)?;
     let all = store.items(&ItemFilter { project: Some(key.into()), include_closed: true, ..Default::default() })?;
-    let v: Vec<ItemOut> = all.into_iter().map(|i| out(i, &touched)).collect();
+    let m = marks(store, key, &all)?;
+    let v: Vec<ItemOut> = all.into_iter().map(|i| out_marked(i, &touched, &m)).collect();
     Ok(serde_json::to_value(v)?)
 }
 
@@ -238,6 +335,7 @@ fn item_page(store: &mut Store, id: &str) -> Result<Value> {
     let key = item.project.clone();
     let touched = touched_map(store, &key)?;
     let all = store.items(&ItemFilter { project: Some(key.clone()), include_closed: true, ..Default::default() })?;
+    let m = marks(store, &key, &all)?;
     let by_id: BTreeMap<&str, &Item> = all.iter().map(|i| (i.meta.id.as_str(), i)).collect();
 
     let mut chain = vec![];
@@ -256,7 +354,7 @@ fn item_page(store: &mut Store, id: &str) -> Result<Value> {
         .iter()
         .filter(|i| i.meta.parent.as_deref() == Some(item.meta.id.as_str()))
         .cloned()
-        .map(|i| out(i, &touched))
+        .map(|i| out_marked(i, &touched, &m))
         .collect();
     let backlinks: Vec<Value> = all
         .iter()
@@ -322,8 +420,10 @@ fn item_page(store: &mut Store, id: &str) -> Result<Value> {
         .collect();
     let recent_after: Vec<&Entry> = after.iter().take(6).copied().collect();
 
+    let story = store.story(&item.meta.id)?;
     Ok(json!({
-        "item": out(item.clone(), &touched),
+        "story": story,
+        "item": out_marked(item.clone(), &touched, &m),
         "chain": chain,
         "children": children,
         "links": links,

@@ -68,6 +68,9 @@ enum Cmd {
         /// Do not move an `open` item to `active`.
         #[arg(long)]
         no_activate: bool,
+        /// Why you are picking it up: recorded as its goal if it has none.
+        #[arg(long, visible_alias = "why")]
+        goal: Option<String>,
     },
     /// Add an item: plan, phase, feature, task, bug, regression, revisit, decision, question, note.
     Add(AddArgs),
@@ -93,11 +96,28 @@ enum Cmd {
         #[command(flatten)]
         extra: ExtraArgs,
     },
-    /// Mark an item done.
+    /// Mark an item done. The note is its outcome: what came out of it (result, commits, what it led to).
     Done {
         id: String,
-        #[arg(long, short)]
+        #[arg(long, short, visible_alias = "outcome")]
         note: Option<String>,
+    },
+    /// What needs attention: overdue and due soon, ripe (what it waited on closed), waiting on the user, stale,
+    /// going in circles, closed without an outcome.
+    #[command(alias = "outstanding")]
+    Pending {
+        /// Every project.
+        #[arg(long, short = 'A')]
+        all_projects: bool,
+        #[arg(long, short = 'n', default_value_t = 50)]
+        limit: usize,
+    },
+    /// Still relevant: a check-in that resets the idle clock without counting as progress. Say why.
+    Still {
+        id: String,
+        /// Why it is still needed, or what it waits on.
+        #[arg(long, short, required = true)]
+        note: String,
     },
     /// Change an item's fields.
     Update(UpdateArgs),
@@ -300,6 +320,30 @@ enum VaultCmd {
     },
 }
 
+/// After a status change: suggest an outcome when an item was closed without one, and say which items were
+/// waiting on it (they are ripe now). Hints go to stderr so `--json` output stays clean.
+fn after_close(app: &mut App, i: &Item, had_note: bool) -> Result<()> {
+    if !i.meta.status.is_closed() {
+        return Ok(());
+    }
+    if !had_note && !matches!(i.meta.kind, Kind::Decision | Kind::Note) {
+        eprintln!(
+            "t9: {} closed without an outcome; record what came out of it: `t9 log -i {} -k finding \"…\"`",
+            i.meta.id, i.meta.id
+        );
+    }
+    let waiting = app.store.items(&ItemFilter { project: Some(i.project.clone()), ..Default::default() })?;
+    let ripe: Vec<&Item> =
+        waiting.iter().filter(|w| w.meta.links.iter().any(|l| l.rel == "blocked-by" && l.to == i.meta.id)).collect();
+    for w in ripe {
+        eprintln!(
+            "t9: {} was waiting on {} and is ripe now: {} — tell the user if it matters to them",
+            w.meta.id, i.meta.id, w.meta.title
+        );
+    }
+    Ok(())
+}
+
 fn vault_cmd(env: &Env, cmd: VaultCmd) -> Result<()> {
     match cmd {
         VaultCmd::Commit { background: true } => {
@@ -418,9 +462,20 @@ impl DecisionArgs {
     }
 }
 
-/// Fields of experiments and resources (shared by `add`, `update` and `status`).
+/// Goal, due date, what it waits on, and the fields of experiments and resources (shared by `add`, `update` and
+/// `status`).
 #[derive(Args, Default)]
 struct ExtraArgs {
+    /// Why it exists: what it serves (one line). `""` clears.
+    #[arg(long, visible_alias = "why")]
+    goal: Option<String>,
+    /// When the user wants it done: 2026-12-01, today, tomorrow, mon…sun, 3d, 2w; `none` clears. Only set it when
+    /// the user gives a date.
+    #[arg(long, value_name = "WHEN")]
+    due: Option<String>,
+    /// It waits on this item (a `blocked-by` link); it shows as ripe once that closes (repeatable).
+    #[arg(long, value_name = "ID")]
+    after: Vec<String>,
     /// Experiment: what is being tested.
     #[arg(long)]
     hypothesis: Option<String>,
@@ -442,21 +497,9 @@ struct ExtraArgs {
     owner: Option<String>,
 }
 
-/// `2026-12-01`, or a delay from today: `30d`, `6w`, `3m`.
+/// `2026-12-01`, `today`, `tomorrow`, `mon`…`sun`, or a delay from today: `30d`, `6w`, `3m`.
 fn parse_date(s: &str) -> Result<chrono::NaiveDate> {
-    let s = s.trim();
-    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        return Ok(d);
-    }
-    let (n, unit) = s.split_at(s.len().saturating_sub(1));
-    let n: i64 = n.parse().with_context(|| format!("'{s}' is not a date (YYYY-MM-DD) or a delay like 30d, 6w, 3m"))?;
-    let days = match unit {
-        "d" => n,
-        "w" => n * 7,
-        "m" => n * 30,
-        _ => bail!("'{s}' is not a date (YYYY-MM-DD) or a delay like 30d, 6w, 3m"),
-    };
-    Ok(chrono::Local::now().date_naive() + chrono::Duration::days(days))
+    t9_core::attention::parse_when(s, chrono::Local::now().date_naive()).map_err(|e| anyhow::anyhow!(e))
 }
 
 impl ExtraArgs {
@@ -467,9 +510,25 @@ impl ExtraArgs {
             Some(v) => Ok(Some(Some(parse_date(v)?))),
         }
     }
+    fn due(&self) -> Result<Option<Option<chrono::NaiveDate>>> {
+        match self.due.as_deref() {
+            None => Ok(None),
+            Some(v) if v.eq_ignore_ascii_case("none") => Ok(Some(None)),
+            Some(v) => Ok(Some(Some(parse_date(v)?))),
+        }
+    }
+    fn after_links(&self) -> Result<Vec<Link>> {
+        self.after.iter().map(|a| Ok(format!("blocked-by:{a}").parse::<Link>()?)).collect()
+    }
     fn patch(self, patch: ItemPatch) -> Result<ItemPatch> {
         let retry_after = self.retry_after()?;
+        let due = self.due()?;
+        let mut add_links = patch.add_links.clone();
+        add_links.extend(self.after_links()?);
         Ok(ItemPatch {
+            goal: self.goal,
+            due,
+            add_links,
             hypothesis: self.hypothesis,
             retry_when: self.retry_when,
             retry_after,
@@ -692,7 +751,7 @@ fn run(cli: Cli) -> Result<()> {
         }
         Cmd::Project(p) => project_cmd(&mut app, p)?,
         Cmd::Session(s) => session_cmd(&mut app, s)?,
-        Cmd::Focus { id, clear, no_activate } => {
+        Cmd::Focus { id, clear, no_activate, goal } => {
             if id.is_none() && !clear {
                 let s = app.store.current_session(&app.caller)?;
                 let focus = s.as_ref().and_then(|s| s.meta.focus.clone());
@@ -701,7 +760,16 @@ fn run(cli: Cli) -> Result<()> {
                     None => println!("no focus (set one with `t9 focus ID`)"),
                 });
             }
-            let (session, item) = app.store.focus(&app.caller, id.as_deref(), !no_activate)?;
+            let (session, mut item) = app.store.focus(&app.caller, id.as_deref(), !no_activate)?;
+            if let (Some(g), Some(i)) = (goal, &item)
+                && i.meta.goal.is_none()
+            {
+                item = Some(app.store.update_item(
+                    &app.caller,
+                    &i.meta.id,
+                    ItemPatch { goal: Some(g), ..Default::default() },
+                )?);
+            }
             let decisions = match &item {
                 Some(i) => app.store.applicable_decisions(i, 5)?,
                 None => vec![],
@@ -721,6 +789,16 @@ fn run(cli: Cli) -> Result<()> {
                         i.meta.title,
                         f.session.short_id()
                     );
+                    match &i.meta.goal {
+                        Some(g) => println!("goal: {g}"),
+                        None => println!(
+                            "goal: not recorded (`t9 focus {} --goal \"…\"` or `t9 update {} --goal \"…\"`)",
+                            i.meta.id, i.meta.id
+                        ),
+                    }
+                    if let Some(d) = i.meta.due {
+                        println!("due: {}", d.format("%a %b %-d"));
+                    }
                     if !f.decisions.is_empty() {
                         println!("\nfrom history (decisions, experiments, resources that apply):");
                         print::relevant(f.decisions, "");
@@ -730,6 +808,7 @@ fn run(cli: Cli) -> Result<()> {
             })?;
         }
         Cmd::Add(a) => {
+            let after = a.extra.after_links()?;
             let ni = NewItem {
                 kind: Some(a.kind),
                 title: a.title.join(" "),
@@ -738,13 +817,19 @@ fn run(cli: Cli) -> Result<()> {
                 priority: a.priority,
                 tags: a.tag,
                 areas: a.area,
+                goal: a.extra.goal.clone(),
+                due: a.extra.due()?.flatten(),
                 retry_after: a.extra.retry_after()?.flatten(),
                 hypothesis: a.extra.hypothesis,
                 retry_when: a.extra.retry_when,
                 resource_type: a.extra.resource_type,
                 location: a.extra.location,
                 owner: a.extra.owner,
-                links: a.link,
+                links: {
+                    let mut l = a.link;
+                    l.extend(after);
+                    l
+                },
                 status: a.status,
             };
             let mut item = app.store.add_item(&app.caller, ni)?;
@@ -761,17 +846,56 @@ fn run(cli: Cli) -> Result<()> {
             emit(json, &e, print::logged)?;
         }
         Cmd::Status { id, status, note, extra } => {
+            let had_note = note.as_deref().is_some_and(|n| !n.trim().is_empty());
             let patch = extra.patch(ItemPatch { status: Some(status), note, ..Default::default() })?;
             let i = app.store.update_item(&app.caller, &id, patch)?;
             emit(json, &i, |i| println!("{} is now {}", i.meta.id, i.meta.status))?;
+            after_close(&mut app, &i, had_note)?;
         }
         Cmd::Done { id, note } => {
+            let had_note = note.as_deref().is_some_and(|n| !n.trim().is_empty());
             let i = app.store.update_item(
                 &app.caller,
                 &id,
                 ItemPatch { status: Some(Status::Done), note, ..Default::default() },
             )?;
             emit(json, &i, |i| println!("{} is now {}", i.meta.id, i.meta.status))?;
+            after_close(&mut app, &i, had_note)?;
+        }
+        Cmd::Pending { all_projects, limit } => {
+            let keys: Vec<String> = if all_projects {
+                app.store.sync_projects()?;
+                app.store.projects()?.into_iter().map(|p| p.meta.key).filter(|k| k != t9_core::GLOBAL).collect()
+            } else {
+                vec![app.project_key()?]
+            };
+            let mut rows = vec![];
+            for k in &keys {
+                let signals = app.store.insights(k)?.signals;
+                let mut r = app.store.attention(k, Some(&signals))?;
+                r.items.truncate(limit);
+                rows.push((k.clone(), r));
+            }
+            #[derive(Serialize)]
+            struct P<'a> {
+                project: &'a str,
+                #[serde(flatten)]
+                report: &'a t9_core::attention::AttentionReport,
+            }
+            let out: Vec<P> = rows.iter().map(|(k, r)| P { project: k, report: r }).collect();
+            if json && !all_projects {
+                emit(json, &out[0], |_| {})?;
+            } else {
+                emit(json, &out, |out| print::pending(out.iter().map(|p| (p.project, p.report)), all_projects))?;
+            }
+        }
+        Cmd::Still { id, note } => {
+            let item = app.store.item(&id)?;
+            let e = app.store.log(
+                &app.caller,
+                LogInput { kind: EntryKind::Checkin, body: note, item: Some(item.meta.id.clone()), refs: vec![] },
+            )?;
+            emit(json, &e, |_| println!("{} checked in: still relevant", item.meta.id))?;
         }
         Cmd::Update(u) => {
             let none_or = |s: &str| s.eq_ignore_ascii_case("none");

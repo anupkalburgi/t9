@@ -587,7 +587,10 @@ fn project_context_experiments_resources_history_and_timeline() {
     assert_eq!((x["status"].as_str(), x["retry_after"].as_str()), (Some("failed"), Some("2020-01-01")));
     s.ok(&repo, &["decide", "Send webhooks one at a time", "--because", "batches above 10 are rejected"]); // BIL-4
     let brief = s.ok(&repo, &["context"]);
-    assert!(brief.contains("## Worth retrying") && brief.contains("BIL-3 experiment [failed]"), "{brief}");
+    assert!(
+        brief.contains("## Needs attention") && brief.contains("BIL-3 experiment [failed] worth retrying since"),
+        "{brief}"
+    );
 
     // History: the whole story, in order, each thing once, with the retry flag.
     let h = s.json(&repo, &["history", "webhook", "batching"]);
@@ -661,6 +664,74 @@ fn insights_flag_loops_flip_flops_and_repeats() {
 
     // The brief warns the agent; the text output is readable.
     let brief = s.ok(&repo, &["context"]);
-    assert!(brief.contains("## Watch out: signs of going in circles"), "{brief}");
+    assert!(brief.contains("## Needs attention") && brief.contains("[open] spinning:"), "{brief}");
     assert!(s.ok(&repo, &["loops"]).contains("Spinning: Webhooks"));
+}
+
+#[test]
+fn goals_due_dates_ripe_work_and_timely_reminders() {
+    let s = Sandbox::new();
+    let repo = s.repo("bil", "git@github.com:acme/bil.git");
+    s.ok(&repo, &["project", "init", "--key", "BIL"]);
+    s.ok(&repo, &["add", "feature", "Webhooks", "--goal", "merchants hear about payments within a minute"]); // BIL-1
+    s.ok(&repo, &["add", "task", "Sign payloads", "--parent", "BIL-1"]); // BIL-2
+    s.ok(&repo, &["add", "task", "Ship the invoice export", "--due", "2020-01-01"]); // BIL-3, overdue
+    s.ok(&repo, &["add", "task", "Re-measure latency", "--after", "BIL-2"]); // BIL-4 waits on BIL-2
+    let x = s.json(&repo, &["add", "task", "Write the runbook", "--due", "today"]); // BIL-5
+    assert!(x["due"].is_string(), "{x}");
+
+    // The goal is inherited, labelled with where it came from.
+    let st = s.json(&repo, &["--agent", "claude-code", "focus", "BIL-2"]);
+    assert!(st["item"]["goal"].is_null());
+    let brief = s.ok(&repo, &["--agent", "claude-code", "context"]);
+    assert!(brief.contains("goal (inferred from BIL-1"), "{brief}");
+    assert!(brief.contains("merchants hear about payments"), "{brief}");
+    s.ok(&repo, &["--agent", "claude-code", "focus", "BIL-2", "--goal", "receivers can verify who sent a webhook"]);
+    assert!(
+        s.ok(&repo, &["--agent", "claude-code", "context"]).contains("  goal: receivers can verify who sent a webhook")
+    );
+
+    // Closing without an outcome nudges; closing what others wait on says they are ripe now.
+    let out = s.cmd(&repo).args(["done", "BIL-2"]).output().unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("closed without an outcome") && err.contains("BIL-4 was waiting on BIL-2"), "{err}");
+
+    // One ranked list: overdue and due today first, then ripe, then closed without an outcome.
+    let p = s.json(&repo, &["pending"]);
+    let reasons: Vec<(String, String)> = p["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| (a["id"].as_str().unwrap().to_string(), a["reason"].as_str().unwrap().to_string()))
+        .collect();
+    let has = |id: &str, r: &str| reasons.iter().any(|(i, x)| i == id && x == r);
+    assert!(
+        has("BIL-3", "overdue") && has("BIL-5", "due-soon") && has("BIL-4", "ripe") && has("BIL-2", "unexplained"),
+        "{reasons:?}"
+    );
+    assert_eq!(reasons[0].1, "overdue", "{reasons:?}");
+    let brief = s.ok(&repo, &["--agent", "claude-code", "context"]);
+    assert!(brief.contains("## Needs attention") && brief.contains("BIL-3 task [open] overdue"), "{brief}");
+
+    // A check-in or progress clears ripe; check-ins need a reason.
+    assert!(!s.cmd(&repo).args(["still", "BIL-4"]).output().unwrap().status.success());
+    s.ok(&repo, &["still", "BIL-4", "-n", "waiting for a quiet hour to measure"]);
+    let p = s.json(&repo, &["pending"]);
+    assert!(!p["items"].as_array().unwrap().iter().any(|a| a["id"] == "BIL-4"), "{p}");
+
+    // The message hook reminds once per item and reason; things the session-start brief listed are not repeated.
+    let start = serde_json::json!({"session_id": "h1", "cwd": repo, "source": "startup"}).to_string();
+    let brief = s.cmd(&s.root).args(["hook", "claude", "session-start"]).write_stdin(start).output().unwrap();
+    assert!(String::from_utf8_lossy(&brief.stdout).contains("BIL-3"));
+    let prompt = serde_json::json!({"session_id": "h1", "cwd": repo, "prompt": "what next?"}).to_string();
+    let first = s.cmd(&s.root).args(["hook", "claude", "prompt"]).write_stdin(prompt.clone()).output().unwrap();
+    assert!(!String::from_utf8_lossy(&first.stdout).contains("t9 reminder"), "already in the brief");
+    // Something new becomes ripe mid-session (another session closes what it waits on).
+    s.ok(&repo, &["add", "task", "Rotate the signing key", "--after", "BIL-5"]); // BIL-6
+    s.ok(&repo, &["done", "BIL-5", "-n", "runbook in docs/runbook.md"]);
+    let second = s.cmd(&s.root).args(["hook", "claude", "prompt"]).write_stdin(prompt.clone()).output().unwrap();
+    let second = String::from_utf8_lossy(&second.stdout).to_string();
+    assert!(second.contains("t9 reminder") && second.contains("BIL-6 ripe: BIL-5 closed"), "{second}");
+    let third = s.cmd(&s.root).args(["hook", "claude", "prompt"]).write_stdin(prompt).output().unwrap();
+    assert!(!String::from_utf8_lossy(&third.stdout).contains("BIL-6"), "shown once");
 }

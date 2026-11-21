@@ -51,6 +51,8 @@ does its work and exits. A daemon (`t9 serve`) is planned for the UIs, not for c
 | `store.rs` | `Store`: the API every front end uses. Locking, atomic writes, sync, resolution, sessions, items, journal, attach/adopt. |
 | `context.rs` | Builds the brief (`Brief`) and renders it to a token budget. |
 | `about.rs` | The project's About: sections in the body of `project.md`, parse/render, `about_add`, `about_set`, `about_confirm`. |
+| `attention.rs` | `attention(project)`: one ranked list of what needs attention (overdue, due soon, ripe, loop, waiting, stale, unexplained) and the backlog count, used by the brief, `t9 pending`, the hooks and the web UI; `parse_when` for dates. |
+| `story.rs` | `story(id)`: an item's goal (stated, inherited or its parent's title), outcome (the closing note, classified), what it led to (links, backlinks, ids the note names) and its children's outcomes; `closings(project)`. |
 | `insights.rs` | `insights(project)`: signals of going in circles (flip-flops, reopened, repeats of dead ends, spinning branches, stuck work) and per-branch activity for the last 7 days. |
 | `history.rs` | `history(topic)` (everything on a topic, oldest first) and `timeline(project, since, topic)`, both as `Event`s. |
 | `unlinked.rs` | Folders where agents worked without a project: suggestions, the registry in `.state/unlinked.json`, once-per-session hints. |
@@ -228,7 +230,8 @@ Agent name: `--agent`/`T9_AGENT`; when unset, `human` if stdin is a terminal, el
 |---|---|---|
 | header | project, cwd, branch, session | — |
 | Last handoff | newest `handoff` entry | 1,200 chars |
-| Current focus | session focus, if not closed | body: 6 lines |
+| Current focus | session focus, if not closed, with its goal (stated or inferred) | body: 6 lines |
+| Needs attention | `attention(project)`: overdue, due soon, ripe, going in circles, waiting on the user, stale, closed without an outcome; then the backlog, unfiled and inbox counts | 6 |
 | In progress | `active`/`blocked` non-structural items | 10 |
 | Plan … x/y done | each open plan: done/total over descendants; open phases/features to depth 2 | 12 lines |
 | Open bugs, regressions, revisits, questions | not closed, not already shown, by priority | 10 |
@@ -239,10 +242,9 @@ Agent name: `--agent`/`T9_AGENT`; when unset, `human` if stdin is a terminal, el
 | Current decisions | `accepted` decisions not shown above, newest first | 6 |
 | Ruled out | `rejected` decisions and ideas | 5 |
 | Parked ideas | open `idea` items | 5 |
-| Experiments running / Worth retrying | open or active experiments; failed or inconclusive ones whose retry date passed | 5 each |
+| Experiments running | open or active experiments | 5 |
 | Resources | resources not dropped, by type | 10 |
 | Recent activity | newest entries except handoffs | 8 |
-| Needs attention | unfiled entries (14 days), inbox count, active items idle 3+ days | — |
 
 `context::render` writes sections in that order into a character budget of `budget × 4`. A section header is
 only written if at least one line fits; dropped lines become "… N more"; a truncated brief says how to get more.
@@ -272,7 +274,10 @@ Recall uses three signals:
 The message hook (`t9 hook claude prompt`, Claude Code `UserPromptSubmit`) runs strict matching on the user's
 message and prints at most 3 decisions (id, status, date, title, the first line of "Why"). If a phrase list
 matches ("let's go with", "instead of", "never", "switch to", …) it also prints a one-line reminder to record the
-decision. It prints nothing otherwise, so most messages cost about 3 ms and add no tokens.
+decision. It also prints a short "t9 reminder" when something new needs attention (`attention(project)` with
+the reasons overdue, due soon, ripe and waiting): each item and reason once per session per local day, using
+marker files in `.state/hints/`; what the session-start brief already listed is marked as shown. It prints
+nothing otherwise, so most messages add no tokens.
 
 ## 10. Git history
 
