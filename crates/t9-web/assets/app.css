@@ -146,7 +146,27 @@ a.plain { color: var(--fg); }
 .side .row { grid-template-columns: 14px 64px 70px minmax(0, 1fr); }
 .side .row .extra { grid-column: 4; }
 
-.mapwrap { border: 1px solid var(--line); border-radius: 10px; overflow: auto; height: calc(100vh - 330px); min-height: 420px; background: var(--card); }
+.main.wide { max-width: none; padding-bottom: 16px; }
+.maphead { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; } .maphead h1 { margin: 0; }
+.toolbar { margin: 6px 0 10px; }
+.mapgrid { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 14px; }
+.mapwrap { border: 1px solid var(--line); border-radius: 10px; overflow: auto; height: calc(100vh - 175px); min-height: 420px; background: var(--card); cursor: grab; }
+.mapwrap.dragging { cursor: grabbing; user-select: none; }
+.mpanel { border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 10px 14px; overflow: auto; height: calc(100vh - 175px); min-height: 420px; min-width: 0; }
+.mpanel h2 { margin: 4px 0 8px; } .mpanel .mp-title { font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
+.mpanel .row { grid-template-columns: 14px 64px 70px minmax(0, 1fr); } .mpanel .row .extra { grid-column: 4; } .mpanel .row .extra:empty { display: none; }
+.mp-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.mp-body { max-height: 260px; overflow: auto; font-size: 13px; }
+.mp-act { margin-bottom: 8px; }
+textarea.short { min-height: 56px; margin-bottom: 6px; }
+.has-sel .m-node:not(.m-path):not(.m-root) { opacity: .4; }
+.has-sel .m-edge:not(.m-path) { opacity: .2; }
+.m-edge.m-path { stroke: var(--accent); stroke-width: 2.5; opacity: 1; }
+.m-node.m-path rect { stroke-width: 3; }
+.m-node.m-sel rect { stroke: var(--fg); stroke-width: 3.5; }
+.hotbtn { border-color: var(--red); color: var(--red); font-weight: 600; }
+.spinb { color: #fff; background: var(--red); border-radius: 50%; width: 15px; height: 15px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; }
+@media (max-width: 1100px) { .mapgrid { grid-template-columns: 1fr; } .mpanel { height: auto; } }
 .mapwrap svg { display: block; font: 12px system-ui, sans-serif; }
 .m-edge { fill: none; stroke: var(--faint); stroke-width: 1.2; opacity: .7; }
 .m-edge.dead { stroke: var(--red); stroke-dasharray: 4 3; opacity: .6; }

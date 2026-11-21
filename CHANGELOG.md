@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.7
+
+- **Map:** explore without leaving it. Clicking a node opens it in a panel beside the map (description, what is
+  inside it with progress, what applies from history, latest entries) and highlights its path back to the
+  project and everything under it. You can change its status, add a note or answer a question there. Ids in the
+  panel select on the map and open their group. Double-click for the full page; "show on the map" on every item
+  page brings you back to the same spot. Drag to move, ⌘-scroll to zoom, Esc to deselect; the map keeps its
+  position and selection when you come back.
+
 ## 0.1.6
 
 - **Map:** a new web page with the project at the centre and its plans, features and work branching out. Leaves

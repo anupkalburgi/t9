@@ -193,6 +193,7 @@ async function loadItems(key) {
 async function route() {
   const h = location.hash.replace(/^#\/?/, "");
   const [a, b, c] = h.split("/").map(decodeURIComponent);
+  main().classList.remove("wide");
   try {
     if (!state.projects.length) state.projects = (await api("projects")).projects;
     if (a === "f" && b && c) {
@@ -423,7 +424,7 @@ function renderItem(p) {
   fields.push(["File", `<span class="mono small faint">${esc(i.path)}</span>`]);
   const isOpen = !closedStatus(i.status);
   let mainCol = `<div class="chain">${chain || `<a href="#/p/${esc(i.project)}/plan">${esc(i.project)} plan</a>`}</div>` +
-    `<div class="item-head">${kind(i.kind)}<span class="mono faint">${esc(i.id)}</span>${status(i.status)}</div><h1>${esc(i.title)}</h1>` +
+    `<div class="item-head">${kind(i.kind)}<span class="mono faint">${esc(i.id)}</span>${status(i.status)}<a class="small" id="onmap" href="#/p/${esc(i.project)}/map">◎ show on the map</a></div><h1>${esc(i.title)}</h1>` +
     `<dl class="meta">${fields.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>` +
     (i.body.trim() ? `<div class="body">${md(i.body)}</div>` : "");
 
@@ -463,6 +464,12 @@ function renderItem(p) {
       catch (e) { $(msg).innerHTML = `<span class="err">${esc(e.message)}</span>`; $(btn).disabled = false; }
     };
   };
+  $("#onmap").onclick = () => {
+    if (mapState.key !== i.project) Object.assign(mapState, { key: i.project, expanded: new Set(), scale: null, sx: null, sy: null });
+    const g = mapKeyOf(i.id);
+    if (g) mapState.expanded.add(g);
+    mapState.sel = i.id; mapState.center = true;
+  };
   if ($("#ansb")) act("#ansb", "#ansmsg", () => post(`item/${i.id}/answer`, { answer: $("#ans").value, decide: $("#asdec").checked }));
   act("#noteb", "#notemsg", () => post(`item/${i.id}/note`, { text: $("#note").value }));
   act("#stb", "#stmsg", () => post(`item/${i.id}/status`, { status: $("#st").value, note: $("#stn").value || null }));
@@ -492,7 +499,8 @@ const PLURAL = {
   goal: "goals", active: "in progress", done: "done", dead: "dead ends", issue: "open issues", question: "questions",
   tried: "experiments", decision: "decisions", idea: "ideas", resource: "resources", open: "open tasks",
 };
-const mapState = { expanded: new Set(), scale: 1 };
+const mapState = { key: null, expanded: new Set(), expandAll: false, scale: null, sel: null, sx: null, sy: null, center: false };
+const groupOf = (i) => (i.kind === "decision" ? "Decisions" : i.kind === "experiment" ? "Experiments" : i.kind === "idea" ? "Ideas" : i.kind === "resource" ? "Resources" : i.kind === "question" ? "Questions" : "Other work");
 
 function buildMap(items, spinning) {
   const ids = new Set(items.map((i) => i.id));
@@ -517,9 +525,9 @@ function buildMap(items, spinning) {
       const g = groups.get(c);
       if (!g) continue;
       const key = pid + ":" + c;
-      if (g.length <= 2 || mapState.expanded.has(key)) {
+      if (g.length <= 2 || mapState.expandAll || mapState.expanded.has(key)) {
         out.push(...g.map((l) => ({ item: l, cat: c, label: l.title, id: l.id, children: [] })));
-        if (g.length > 2) out.push({ cluster: key, cat: c, label: `▴ collapse ${g.length}`, children: [], collapse: true });
+        if (g.length > 2 && !mapState.expandAll) out.push({ cluster: key, cat: c, label: `▴ collapse ${g.length}`, children: [], collapse: true });
       } else {
         out.push({ cluster: key, cat: c, label: `${g.length} ${PLURAL[c]}`, items: g, children: [] });
       }
@@ -530,11 +538,10 @@ function buildMap(items, spinning) {
   const top = kids.get("") || [];
   const structural = top.filter((i) => (kids.get(i.id) || []).length || ["plan", "phase", "feature"].includes(i.kind));
   const loose = top.filter((i) => !structural.includes(i));
-  const groupOf = (i) => (i.kind === "decision" ? "Decisions" : i.kind === "experiment" ? "Experiments" : i.kind === "idea" ? "Ideas" : i.kind === "resource" ? "Resources" : i.kind === "question" ? "Questions" : "Other work");
   const synth = new Map();
   for (const i of loose) { const g = groupOf(i); if (!synth.has(g)) synth.set(g, []); synth.get(g).push(i); }
   const children = [...structural.map(node)];
-  for (const [g, list] of synth) children.push({ label: `${g} (${list.length})`, cat: "goal", synthetic: true, children: childrenOf("~" + g, list) });
+  for (const [g, list] of synth) children.push({ key: "~" + g, label: `${g} (${list.length})`, cat: "goal", synthetic: true, children: childrenOf("~" + g, list) });
   return children;
 }
 
@@ -553,9 +560,50 @@ const leafCount = (n) => (n.children.length ? n.children.reduce((a, c) => a + le
 
 async function renderMap(key) {
   const [ins, proj] = await Promise.all([api(`p/${key}/insights`), api(`p/${key}/about`)]);
-  const spinning = new Set(ins.branches.filter((b) => b.spinning).map((b) => b.id));
-  const branches = buildMap(state.items, spinning);
-  // Balance branches between the two sides.
+  if (mapState.key !== key) { Object.assign(mapState, { key, expanded: new Set(), sel: null, scale: null, sx: null, sy: null }); }
+  mapState.ins = ins; mapState.proj = proj;
+  main().classList.add("wide");
+  const legendCats = ["goal", "active", "done", "issue", "question", "tried", "dead", "decision", "idea"];
+  const hot = ins.signals.filter((s) => s.severity >= 2).length;
+  main().innerHTML =
+    `<div class="maphead"><h1>Map</h1><button id="msig" class="${hot ? "hotbtn" : ""}">${hot ? `⚠ ${ins.signals.length} signs of going in circles` : "Going in circles?"}</button><span class="muted small">Click a node to see it on the right · double-click opens its page · click a group to open it · drag to move · ⌘-scroll to zoom</span></div>` +
+    `<div class="toolbar"><span class="mlegend">${legendCats.map((c) => `<span class="m-key m-${c}"><i></i>${CATS[c]}</span>`).join("")}<span class="m-key"><b class="spinb">↻</b>spinning</span></span>` +
+    `<button id="zin" title="zoom in">+</button><button id="zout" title="zoom out">−</button><button id="zfit">fit</button><button id="mexp">expand all</button><button id="mcol">collapse all</button></div>` +
+    `<div class="mapgrid"><div class="mapwrap" id="mapwrap"></div><aside class="mpanel" id="mpanel"></aside></div>`;
+  drawMap();
+  renderPanel();
+  const zoom = (f) => { const w = $("#mapwrap"); const cx = (w.scrollLeft + w.clientWidth / 2) / mapState.scale, cy = (w.scrollTop + w.clientHeight / 2) / mapState.scale; mapState.scale = Math.max(0.3, Math.min(2, mapState.scale * f)); drawMap(); w.scrollLeft = cx * mapState.scale - w.clientWidth / 2; w.scrollTop = cy * mapState.scale - w.clientHeight / 2; };
+  $("#zin").onclick = () => zoom(1.2);
+  $("#zout").onclick = () => zoom(1 / 1.2);
+  $("#zfit").onclick = () => { mapState.scale = null; mapState.sx = null; drawMap(); };
+  $("#mexp").onclick = () => { mapState.expandAll = true; mapState.expanded.clear(); drawMap(); };
+  $("#mcol").onclick = () => { mapState.expandAll = false; mapState.expanded.clear(); drawMap(); };
+  $("#msig").onclick = () => selectNode(null);
+  // Drag to pan.
+  const w = $("#mapwrap");
+  let drag = null;
+  w.onmousedown = (e) => { if (e.button === 0 && !e.target.closest(".m-node")) { drag = { x: e.clientX, y: e.clientY, sx: w.scrollLeft, sy: w.scrollTop }; w.classList.add("dragging"); e.preventDefault(); } };
+  window.onmousemove = (e) => { if (drag) { w.scrollLeft = drag.sx - (e.clientX - drag.x); w.scrollTop = drag.sy - (e.clientY - drag.y); } };
+  window.onmouseup = () => { drag = null; w.classList.remove("dragging"); };
+  w.onscroll = () => { mapState.sx = w.scrollLeft; mapState.sy = w.scrollTop; };
+  w.onwheel = (e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoom(e.deltaY < 0 ? 1.1 : 1 / 1.1); } };
+}
+
+// Where an item is drawn: its own node, or the group pill it is folded into.
+function mapKeyOf(id) {
+  const ids = new Set(state.items.map((i) => i.id));
+  const it = state.items.find((i) => i.id === id);
+  if (!it) return null;
+  const hasKids = state.items.some((c) => c.parent === id);
+  const parent = it.parent && ids.has(it.parent) ? it.parent : null;
+  if (hasKids || (!parent && ["plan", "phase", "feature"].includes(it.kind))) return null;
+  return (parent || "~" + groupOf(it)) + ":" + category(it);
+}
+
+function drawMap() {
+  const w = $("#mapwrap");
+  if (!w) return;
+  const branches = buildMap(state.items, new Set(mapState.ins.branches.filter((b) => b.spinning).map((b) => b.id)));
   const right = [], left = [];
   let r = 0, l = 0;
   for (const b of branches.slice().sort((a, b) => leafCount(b) - leafCount(a))) {
@@ -567,16 +615,23 @@ async function renderMap(key) {
   const shift = (nodes, h) => { const walk = (n) => { n.y -= h / 2; n.children.forEach(walk); }; nodes.forEach(walk); };
   shift(right, hr); shift(left, hl);
   const all = [];
+  const root = { x: 0, y: 0, label: mapState.proj.name, cat: "root", children: [], key: "~root" };
   const walk = (n, parent) => { all.push([n, parent]); n.children.forEach((c) => walk(c, n)); };
-  const root = { x: 0, y: 0, label: proj.name, cat: "root", children: [] };
   [...right, ...left].forEach((n) => walk(n, root));
+  const keyOf = (n) => n.key || (n.item ? n.item.id : n.cluster);
+  mapState.parentOf = new Map(all.map(([n, p]) => [keyOf(n), keyOf(p)]));
+  mapState.pos = new Map(all.map(([n]) => [keyOf(n), n]));
   const xs = all.map(([n]) => n.x), ys = all.map(([n]) => n.y);
   const minX = Math.min(0, ...xs) - W, maxX = Math.max(0, ...xs) + W, minY = Math.min(0, ...ys) - 40, maxY = Math.max(0, ...ys) + 40;
   const width = maxX - minX, height = maxY - minY;
+  const firstDraw = mapState.scale === null;
+  if (firstDraw) mapState.scale = Math.max(0.8, Math.min(1, (w.clientWidth - 16) / width, (w.clientHeight - 16) / height));
+  const sc = mapState.scale;
+  mapState.origin = { minX, minY };
   const edge = ([n, p]) => {
     const side = n.x >= 0 ? 1 : -1;
     const x1 = p.x + (side * (p === root ? 120 : W)) / 2, y1 = p.y, x2 = n.x - (side * W) / 2, y2 = n.y, mx = (x1 + x2) / 2;
-    return `<path class="m-edge ${n.cat === "dead" ? "dead" : ""}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"/>`;
+    return `<path data-k="${esc(keyOf(n))}" class="m-edge ${n.cat === "dead" ? "dead" : ""}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"/>`;
   };
   const short = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
   const nodeSvg = ([n]) => {
@@ -584,36 +639,136 @@ async function renderMap(key) {
     const text = n.item ? `${n.item.id}  ${short(n.label, 24)}` : short(n.label, 30);
     const attrs = n.item ? `data-go="${esc(n.item.id)}"` : n.cluster ? `data-cl="${esc(n.cluster)}"` : "";
     const spin = n.spinning ? `<g class="m-spin"><circle cx="${n.x + W / 2 - 4}" cy="${n.y - H / 2 + 2}" r="9"/><text x="${n.x + W / 2 - 4}" y="${n.y - H / 2 + 6}" text-anchor="middle">↻</text></g>` : "";
-    return `<g class="m-node m-${n.cat} ${n.cluster ? "m-cluster" : ""} ${n.synthetic ? "m-synth" : ""}" ${attrs}><title>${esc(tip)}</title>` +
+    return `<g data-k="${esc(keyOf(n))}" class="m-node m-${n.cat} ${n.cluster ? "m-cluster" : ""} ${n.synthetic ? "m-synth" : ""}" ${attrs}><title>${esc(tip)}</title>` +
       `<rect x="${n.x - W / 2}" y="${n.y - H / 2}" width="${W}" height="${H}" rx="13"/>` +
       `<text x="${n.x}" y="${n.y + 4}" text-anchor="middle">${esc(text)}</text>${spin}</g>`;
   };
-  const rootSvg = `<g class="m-node m-root"><rect x="-120" y="-20" width="240" height="40" rx="20"/><text x="0" y="5" text-anchor="middle">${esc(short(proj.name, 28))}</text></g>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${width} ${height}" width="${width * mapState.scale}" height="${height * mapState.scale}">` +
+  const rootSvg = `<g class="m-node m-root" data-root="1"><title>${esc(mapState.proj.name)}: click for the signs of going in circles</title><rect x="-120" y="-20" width="240" height="40" rx="20"/><text x="0" y="5" text-anchor="middle">${esc(short(mapState.proj.name, 28))}</text></g>`;
+  w.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${width} ${height}" width="${width * sc}" height="${height * sc}">` +
     all.map(edge).join("") + all.map(nodeSvg).join("") + rootSvg + `</svg>`;
+  w.querySelectorAll("[data-go]").forEach((g) => {
+    g.onclick = () => selectNode(g.dataset.go);
+    g.ondblclick = () => (location.hash = "#/i/" + g.dataset.go);
+  });
+  w.querySelectorAll("[data-cl]").forEach((g) => (g.onclick = () => {
+    const k = g.dataset.cl;
+    if (mapState.expandAll) { mapState.expandAll = false; }
+    mapState.expanded.has(k) ? mapState.expanded.delete(k) : mapState.expanded.add(k);
+    drawMap();
+  }));
+  w.querySelector("[data-root]").onclick = () => selectNode(null);
+  highlight();
+  if (mapState.center) { mapState.center = false; centerOn(mapState.sel); }
+  else if (firstDraw || mapState.sx === null) { w.scrollLeft = -minX * sc - w.clientWidth / 2; w.scrollTop = -minY * sc - w.clientHeight / 2; }
+  else { w.scrollLeft = mapState.sx; w.scrollTop = mapState.sy; }
+}
 
-  const sev = (n) => ["", "low", "mid", "high"][n] || "low";
-  const signals = ins.signals.length
-    ? ins.signals.slice(0, 8).map((s) => `<div class="signal ${sev(s.severity)}"><strong>${esc(s.kind)}</strong> ${inline(s.title)}<div class="small muted">${inline(s.detail)}</div></div>`).join("") +
-      (ins.signals.length > 8 ? `<div class="more">… ${ins.signals.length - 8} more (t9 insights)</div>` : "")
-    : '<div class="empty">No signs of going in circles: no flip-flopping decisions, reopened work, repeats of dead ends or spinning branches.</div>';
-  const legendCats = ["goal", "active", "done", "issue", "question", "tried", "dead", "decision", "idea"];
-  main().innerHTML = `<h1>Map</h1><p class="muted">The project at the centre; plans and features branch out. Leaves are grouped by outcome; click a group to open it, a node for its page. ↻ marks a branch that is spinning.</p>` +
-    `<section class="card ${ins.signals.some((s) => s.severity >= 2) ? "alert" : ""}"><h2>Are we going in circles?</h2>${signals}</section>` +
-    `<div class="toolbar"><span class="mlegend">${legendCats.map((c) => `<span class="m-key m-${c}"><i></i>${CATS[c]}</span>`).join("")}</span>` +
-    `<button id="zin">+</button><button id="zout">−</button><button id="zfit">fit</button><button id="mexp">expand all</button><button id="mcol">collapse all</button></div>` +
-    `<div class="mapwrap" id="mapwrap">${svg}</div>`;
-  const rerender = () => { const w = $("#mapwrap"); const sx = w.scrollLeft, sy = w.scrollTop; renderMap(key).then(() => { $("#mapwrap").scrollLeft = sx; $("#mapwrap").scrollTop = sy; }); };
-  document.querySelectorAll("[data-go]").forEach((g) => (g.onclick = () => (location.hash = "#/i/" + g.dataset.go)));
-  document.querySelectorAll("[data-cl]").forEach((g) => (g.onclick = () => { const k = g.dataset.cl; mapState.expanded.has(k) ? mapState.expanded.delete(k) : mapState.expanded.add(k); rerender(); }));
-  $("#zin").onclick = () => { mapState.scale = Math.min(2, mapState.scale * 1.2); rerender(); };
-  $("#zout").onclick = () => { mapState.scale = Math.max(0.3, mapState.scale / 1.2); rerender(); };
-  $("#zfit").onclick = () => { mapState.scale = Math.min(1, ($("#mapwrap").clientWidth - 10) / width); rerender(); };
-  $("#mexp").onclick = () => { state.items.forEach((i) => Object.keys(CATS).forEach((c) => mapState.expanded.add(i.id + ":" + c))); ["Decisions", "Experiments", "Ideas", "Resources", "Questions", "Other work"].forEach((g) => Object.keys(CATS).forEach((c) => mapState.expanded.add("~" + g + ":" + c))); rerender(); };
-  $("#mcol").onclick = () => { mapState.expanded.clear(); rerender(); };
-  // Centre the view on the project.
+function centerOn(id) {
+  const w = $("#mapwrap"), n = id && (mapState.pos.get(id) || mapState.pos.get(mapKeyOf(id)));
+  if (!w || !n) return;
+  const sc = mapState.scale, { minX, minY } = mapState.origin;
+  w.scrollTo({ left: (n.x - minX) * sc - w.clientWidth / 2, top: (n.y - minY) * sc - w.clientHeight / 2, behavior: "smooth" });
+}
+
+// Marks the selected node and the path from it back to the project.
+function highlight() {
   const w = $("#mapwrap");
-  if (!w.dataset.centered) { w.scrollLeft = (-minX * mapState.scale) - w.clientWidth / 2; w.scrollTop = (-minY * mapState.scale) - w.clientHeight / 2; w.dataset.centered = "1"; }
+  if (!w) return;
+  w.querySelectorAll(".m-sel, .m-path").forEach((e) => e.classList.remove("m-sel", "m-path"));
+  w.classList.toggle("has-sel", !!mapState.sel);
+  if (!mapState.sel) return;
+  let k = mapState.pos.has(mapState.sel) ? mapState.sel : mapKeyOf(mapState.sel);
+  if (!k || !mapState.pos.has(k)) return;
+  w.querySelector(`.m-node[data-k="${CSS.escape(k)}"]`)?.classList.add("m-sel");
+  // Everything under the selection stays lit too.
+  const sel = k;
+  for (const d of mapState.parentOf.keys()) {
+    for (let u = d; u && u !== "~root"; u = mapState.parentOf.get(u)) {
+      if (u === sel) { w.querySelectorAll(`[data-k="${CSS.escape(d)}"]`).forEach((e) => e.classList.add("m-path")); break; }
+    }
+  }
+  while (k && k !== "~root") {
+    w.querySelectorAll(`[data-k="${CSS.escape(k)}"]`).forEach((e) => e.classList.add("m-path"));
+    k = mapState.parentOf.get(k);
+  }
+}
+
+// Select an item (or null for the project): highlight it and show it in the panel. `reveal` opens its group.
+function selectNode(id, reveal = false) {
+  mapState.sel = id;
+  if (id && reveal) {
+    const g = mapKeyOf(id);
+    if (g && !mapState.expandAll && !mapState.expanded.has(g)) { mapState.expanded.add(g); drawMap(); }
+    centerOn(id);
+  }
+  highlight();
+  renderPanel();
+}
+
+async function renderPanel() {
+  const el = $("#mpanel");
+  if (!el) return;
+  const sev = (n) => ["", "low", "mid", "high"][n] || "low";
+  if (!mapState.sel) {
+    const ins = mapState.ins;
+    el.innerHTML = `<h2>Are we going in circles?</h2>` +
+      (ins.signals.length
+        ? `<p class="small muted">Click an id to find it on the map.</p>` + ins.signals.map((s) => `<div class="signal ${sev(s.severity)}"><strong>${esc(s.kind)}</strong> ${inline(s.title)}<div class="small muted">${inline(s.detail)}</div></div>`).join("")
+        : '<div class="empty">No signs: no flip-flopping decisions, reopened work, repeats of dead ends or spinning branches.</div>') +
+      `<h3>Busiest branches, last 7 days</h3><div class="rows">${ins.branches.slice(0, 8).map((b) => { const it = state.items.find((i) => i.id === b.id); return it ? row(it, `${b.spinning ? "↻ " : ""}${b.entries_7d} entries · +${b.opened_7d} / ✓${b.closed_7d}`) : ""; }).join("")}</div>`;
+    panelLinks(el);
+    return;
+  }
+  const id = mapState.sel;
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  let p;
+  try { p = await api("item/" + encodeURIComponent(id)); } catch (e) { el.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+  if (mapState.sel !== id) return;
+  const i = p.item;
+  const chain = p.chain.map((c) => `<a href="#/i/${esc(c.id)}">${esc(c.id)}</a>`).join(" › ");
+  const closedKids = p.children.filter((c) => closedStatus(c.status)).length;
+  const hist = p.entries.slice(-6).reverse();
+  const isOpen = !closedStatus(i.status);
+  const statuses = i.kind === "decision" ? ["accepted", "proposed", "rejected", "superseded"] : i.kind === "experiment" ? ["open", "active", "done", "failed", "inconclusive", "dropped"] : ["open", "active", "blocked", "done", "dropped"];
+  el.innerHTML =
+    `<div class="mp-top"><button id="mpx" title="back to the overview (Esc)">←</button><a class="go" href="#/i/${esc(i.id)}">open full page ↗</a></div>` +
+    `<div class="chain">${chain ? chain + " › " : ""}<span class="mono">${esc(i.id)}</span></div>` +
+    `<div class="item-head">${kind(i.kind)}${status(i.status)}${i.priority !== null && i.priority !== undefined ? prio(i.priority) : ""}<span class="small muted">${dot(i.touched)} ${esc(ago(i.touched))}</span></div>` +
+    `<h2 class="mp-title">${esc(i.title)}</h2>` +
+    `<p class="small muted">Created ${esc(when(i.created))} by ${esc(i.created_by || "?")}${p.since.entries ? ` · ${p.since.entries} entries in the project since` : ""}</p>` +
+    (i.hypothesis ? `<p class="small"><strong>Hypothesis:</strong> ${inline(i.hypothesis)}</p>` : "") +
+    (i.retry_when || i.retry_after ? `<p class="small"><strong>Retry:</strong> ${esc([i.retry_when && "when " + i.retry_when, i.retry_after && "after " + i.retry_after].filter(Boolean).join(" · "))}</p>` : "") +
+    (i.body.trim() ? `<div class="body mp-body">${md(i.body)}</div>` : "") +
+    (i.kind === "question" && isOpen ? `<section class="card ask"><h2>Answer</h2><textarea id="mpans" placeholder="Your answer…"></textarea><p class="small"><label><input id="mpdec" type="checkbox" checked> also record it as a decision</label></p><button class="primary" id="mpansb">Answer</button> <span id="mpmsg1" class="small"></span></section>` : "") +
+    (p.children.length ? `<h3>Inside ${esc(i.id)} · ${closedKids}/${p.children.length} closed</h3>${progressBar(closedKids, p.children.length)}${rows(p.children.slice().sort((a, b) => closedStatus(a.status) - closedStatus(b.status)), (c) => row(c, closedStatus(c.status) ? status(c.status) : ""), 12)}` : "") +
+    (p.applicable.length ? `<h3>From history</h3>${rows(p.applicable, (a) => row(a, esc(a.reasons.join("; "))), 5)}` : "") +
+    `<h3>Latest on ${esc(i.id)}</h3>` + (hist.length ? `<div class="entries">${hist.map((e) => entryCompact(e)).join("")}</div>${p.entries.length > 6 ? `<div class="more"><a class="go" href="#/i/${esc(i.id)}">all ${p.entries.length} entries ↗</a></div>` : ""}` : '<div class="empty">No journal entries yet.</div>') +
+    `<h3>Change</h3><div class="mp-act"><select id="mpst">${statuses.map((x) => `<option ${x === i.status ? "selected" : ""}>${x}</option>`).join("")}</select> <button id="mpstb">Save status</button></div>` +
+    `<textarea id="mpnote" class="short" placeholder="A note on ${esc(i.id)}…"></textarea><button id="mpnoteb">Add note</button> <span id="mpmsg" class="small"></span>`;
+  $("#mpx").onclick = () => selectNode(null);
+  panelLinks(el);
+  const act = (btn, msg, fn) => {
+    $(btn).onclick = async () => {
+      $(btn).disabled = true;
+      try { await fn(); await loadItems(state.key); mapState.ins = await api(`p/${state.key}/insights`); drawMap(); renderPanel(); }
+      catch (e) { $(msg).innerHTML = `<span class="err">${esc(e.message)}</span>`; $(btn).disabled = false; }
+    };
+  };
+  if ($("#mpansb")) act("#mpansb", "#mpmsg1", () => post(`item/${i.id}/answer`, { answer: $("#mpans").value, decide: $("#mpdec").checked }));
+  act("#mpstb", "#mpmsg", () => post(`item/${i.id}/status`, { status: $("#mpst").value, note: null }));
+  act("#mpnoteb", "#mpmsg", () => post(`item/${i.id}/note`, { text: $("#mpnote").value }));
+}
+
+// Inside the panel, item links select on the map instead of leaving it (except "open full page").
+function panelLinks(el) {
+  el.querySelectorAll('a[href^="#/i/"]:not(.go)').forEach((a) => {
+    a.onclick = (e) => {
+      const id = decodeURIComponent(a.getAttribute("href").slice(4));
+      if (!state.items.some((i) => i.id === id)) return;
+      e.preventDefault();
+      selectNode(id, true);
+    };
+  });
 }
 
 // ---------------------------------------------------------------- live refresh, search, keys
@@ -645,6 +800,7 @@ $("#search").onsubmit = (e) => {
   else if (state.key) location.hash = `#/p/${state.key}/search?q=${encodeURIComponent(q)}`;
 };
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("#mpanel") && mapState.sel && !["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) { selectNode(null); return; }
   if (e.key === "/" && !["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) { e.preventDefault(); $("#q").focus(); }
 });
 window.addEventListener("hashchange", route);
